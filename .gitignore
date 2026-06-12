@@ -1,0 +1,11 @@
+basic-pitch-main/
+.vscode/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.env
+frontend/assets/FluidR3_GM.sf2
+frontend/FluidR3_GM.sf2
+*.sf2
+*.dll
