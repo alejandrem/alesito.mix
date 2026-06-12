@@ -29,6 +29,7 @@ class PianoRollView(QGraphicsView):
     """
 
     seek_requested = pyqtSignal(float)
+    note_deleted = pyqtSignal(object)  # Emite el NoteEvent eliminado
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -54,6 +55,11 @@ class PianoRollView(QGraphicsView):
         self._note_items: List[QGraphicsRectItem] = []
         self._grid_lines: List[QGraphicsLineItem] = []
         self._playhead: Optional[QGraphicsLineItem] = None
+        self._selected_item: Optional[QGraphicsRectItem] = None
+        self._selected_note_original_pen: Optional[QPen] = None
+
+        # Hacer que el view pueda recibir eventos de teclado
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
         # Tiempo
         self._current_time = 0.0
@@ -111,6 +117,8 @@ class PianoRollView(QGraphicsView):
         self._note_items.clear()
         self._grid_lines.clear()
         self._playhead = None
+        self._selected_item = None
+        self._selected_note_original_pen = None
 
         if not self._notes:
             self._draw_empty_grid()
@@ -147,6 +155,8 @@ class PianoRollView(QGraphicsView):
         self._note_items.clear()
         self._grid_lines.clear()
         self._playhead = None
+        self._selected_item = None
+        self._selected_note_original_pen = None
 
     # ── Crear items gráficos ─────────────────────────────────────────────────
 
@@ -231,13 +241,40 @@ class PianoRollView(QGraphicsView):
     # ── Interacción ──────────────────────────────────────────────────────────
 
     def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            pos = event.position()
-            scene_pos = self.mapToScene(int(pos.x()), int(pos.y()))
-            time_sec = (scene_pos.x() - self._playhead_x) / self._pixels_per_second
-            time_sec = max(0.0, min(time_sec, self._duration))
-            self.seek_requested.emit(time_sec)
+        item = self.itemAt(event.pos())
+        
+        # Deseleccionar nota anterior si existe
+        if self._selected_item and self._selected_note_original_pen:
+            self._selected_item.setPen(self._selected_note_original_pen)
+            self._selected_item = None
+            self._selected_note_original_pen = None
+
+        if isinstance(item, QGraphicsRectItem) and item in self._note_items:
+            # Seleccionar nueva nota
+            self._selected_item = item
+            self._selected_note_original_pen = item.pen()
+            item.setPen(QPen(QColor("white"), 2.0))
+            
         super().mousePressEvent(event)
+
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
+            if self._selected_item and self._selected_item in self._note_items:
+                idx = self._note_items.index(self._selected_item)
+                note = self._notes[idx]
+                
+                # Remover de las listas
+                self._notes.remove(note)
+                self._scene.removeItem(self._selected_item)
+                self._note_items.remove(self._selected_item)
+                
+                self._selected_item = None
+                self._selected_note_original_pen = None
+                
+                # Avisar al resto del programa
+                self.note_deleted.emit(note)
+        else:
+            super().keyPressEvent(event)
 
     def wheelEvent(self, event):
         """Scroll normal — sin zoom con rueda del mouse."""

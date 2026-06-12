@@ -109,8 +109,9 @@ class MainWindow(QMainWindow):
         self._sidebar.apply_clicked.connect(self._on_apply_settings)
         self._sidebar.cancel_clicked.connect(self._on_cancel_transcription)
 
-        # Piano Roll → Seek
+        # Piano Roll → Eventos interactivos
         self._piano_roll.seek_requested.connect(self._on_seek)
+        self._piano_roll.note_deleted.connect(self._on_note_deleted)
 
         # Scroll sincronizado: piano roll vertical scroll → piano
         self._piano_roll.verticalScrollBar().valueChanged.connect(
@@ -233,6 +234,29 @@ class MainWindow(QMainWindow):
         self._overlay.set_progreso(100)
         self._overlay.set_mensaje("Audio cargado ✓")
         QTimer.singleShot(2000, self._overlay.ocultar)
+
+    def _on_note_deleted(self, note):
+        """Callback cuando el usuario elimina una nota del Piano Roll."""
+        # 1. Eliminar de la lista de notas de la app
+        if note in self._current_notes:
+            self._current_notes.remove(note)
+            
+        # 2. Eliminar del motor de reproducción (para que ya no suene al darle play)
+        if hasattr(self._playback, 'notes') and note in self._playback.notes:
+            self._playback.notes.remove(note)
+            
+        # 3. Eliminar del archivo MIDI en memoria (para la descarga)
+        if self._current_midi_data and len(self._current_midi_data.instruments) > 0:
+            for pm_note in list(self._current_midi_data.instruments[0].notes):
+                # Validar nota exacta por tiempo de inicio, fin y pitch
+                if abs(pm_note.start - note.start) < 0.001 and abs(pm_note.end - note.end) < 0.001 and pm_note.pitch == note.pitch:
+                    self._current_midi_data.instruments[0].notes.remove(pm_note)
+                    break
+                    
+        # 4. Actualizar contadores visuales en el sidebar
+        if self._current_midi_data:
+            info = get_midi_info(self._current_midi_data)
+            self._sidebar.set_midi_info(info['num_notes'], info['duration'], info['tempo'])
 
     def _on_transcription_error(self, msg: str):
         """Callback si la transcripción falla."""
