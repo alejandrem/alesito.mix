@@ -507,11 +507,8 @@ class Sidebar(QWidget):
         self.stop_clicked.emit()
 
     def _on_auto_toggle(self):
-        checked = self._btn_auto.isChecked()
-        if checked:
-            self._btn_auto.setText("✓")
-        else:
-            self._btn_auto.setText("✓")
+        # El estilo CSS :checked ya cambia el color del botón para indicar si está activo
+        pass
 
     @property
     def auto_adjust_enabled(self) -> bool:
@@ -578,10 +575,14 @@ class Sidebar(QWidget):
         }
 
     def set_progress(self, value: int):
-        pass  # Barra de progreso eliminada
+        """Actualiza el label del nombre de archivo con el porcentaje de progreso."""
+        if value > 0 and value < 100:
+            self._label_filename.setText(f"Procesando... {value}%")
 
     def set_status(self, text: str):
-        pass  # Mensajes de estado eliminados
+        """Muestra un estado breve en el label del nombre de archivo."""
+        # No sobreescribir si ya hay un nombre de archivo útil cargado
+        pass  # El overlay de carga ya muestra el estado — este método se deja limpio
 
     def enable_download(self, midi_path: str):
         self._midi_saved_path = midi_path

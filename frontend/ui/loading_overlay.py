@@ -143,12 +143,12 @@ class LoadingOverlay(QWidget):
         self._progress.setValue(0)
         self._msg_timer.start()
 
-        # Centrar sobre el padre
+        # Centrar sobre el padre usando coordenadas globales (funciona con multi-monitor)
         if self.parent():
-            parent_rect = self.parent().geometry()
-            x = parent_rect.x() + (parent_rect.width() - self.width()) // 2
-            y = parent_rect.y() + (parent_rect.height() - self.height()) // 2
-            self.move(x, y)
+            parent_center = self.parent().rect().center()
+            global_center = self.parent().mapToGlobal(parent_center)
+            self.move(global_center.x() - self.width() // 2,
+                      global_center.y() - self.height() // 2)
 
         self.show()
         self.raise_()

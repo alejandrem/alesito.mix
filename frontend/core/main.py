@@ -7,15 +7,11 @@ import sys
 import os
 from pathlib import Path
 
-# ── Configurar sys.path para incluir basic-pitch-main y frontend ─────────
+# ── Configurar sys.path para incluir el frontend ────────────────────────
 _core_dir = Path(__file__).resolve().parent
 _frontend_dir = _core_dir.parent
-_project_root = _frontend_dir.parent  # alesito.mix/ → basic-pitch/
-_basic_pitch_main = _project_root / "basic-pitch-main"
 
-if str(_basic_pitch_main) not in sys.path:
-    sys.path.insert(0, str(_basic_pitch_main))
-
+# Nota: basic-pitch/ se agrega al path desde transcription_worker.py cuando es necesario
 if str(_frontend_dir) not in sys.path:
     sys.path.insert(0, str(_frontend_dir))
 

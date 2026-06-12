@@ -38,6 +38,7 @@ class MainWindow(QMainWindow):
         self._current_midi_data = None
         self._current_notes = []
         self._midi_save_path = ""
+        self._last_known_tempo = 0.0  # Guardamos el tempo para no re-parsear en cada borrado
 
         # Motor de reproducción
         sf2_path = self._find_sf2()
@@ -228,6 +229,7 @@ class MainWindow(QMainWindow):
 
         # Info
         info = get_midi_info(midi_data)
+        self._last_known_tempo = info['tempo']
         self._sidebar.set_midi_info(info['num_notes'], info['duration'], info['tempo'])
 
         # Cerrar overlay con delay
@@ -245,18 +247,26 @@ class MainWindow(QMainWindow):
         if hasattr(self._playback, 'notes') and note in self._playback.notes:
             self._playback.notes.remove(note)
             
+            # Recalcular _next_note_idx para que no apunte a una posición inválida
+            current = self._playback.current_time
+            self._playback._next_note_idx = 0
+            for i, n in enumerate(self._playback.notes):
+                if n.end >= current:
+                    self._playback._next_note_idx = i
+                    break
+            
         # 3. Eliminar del archivo MIDI en memoria (para la descarga)
         if self._current_midi_data and len(self._current_midi_data.instruments) > 0:
             for pm_note in list(self._current_midi_data.instruments[0].notes):
-                # Validar nota exacta por tiempo de inicio, fin y pitch
                 if abs(pm_note.start - note.start) < 0.001 and abs(pm_note.end - note.end) < 0.001 and pm_note.pitch == note.pitch:
                     self._current_midi_data.instruments[0].notes.remove(pm_note)
                     break
                     
-        # 4. Actualizar contadores visuales en el sidebar
+        # 4. Actualizar contador de notas — sin re-parsear todo el MIDI, solo contamos la lista
         if self._current_midi_data:
-            info = get_midi_info(self._current_midi_data)
-            self._sidebar.set_midi_info(info['num_notes'], info['duration'], info['tempo'])
+            num_notes = len(self._current_notes)
+            duration = self._current_midi_data.get_end_time()
+            self._sidebar.set_midi_info(num_notes, duration, self._last_known_tempo)
 
     def _on_transcription_error(self, msg: str):
         """Callback si la transcripción falla."""
@@ -268,10 +278,15 @@ class MainWindow(QMainWindow):
         """Cancela la transcripción en curso."""
         if self._worker and self._worker.isRunning():
             self._worker.terminate()
-            self._worker.wait(3000)
+            terminated_in_time = self._worker.wait(3000)
             self._overlay.ocultar()
             self._sidebar.enable_apply()
             self._sidebar.disable_cancel()
+            
+            if not terminated_in_time:
+                # El thread no murió a tiempo — bloquear upload 5 seg para evitar doble-worker
+                self._sidebar._btn_upload.setEnabled(False)
+                QTimer.singleShot(5000, lambda: self._sidebar._btn_upload.setEnabled(True))
 
     def _on_apply_settings(self, settings: dict):
         """Re-transcribe con los nuevos ajustes, manteniendo la posición."""
@@ -351,6 +366,7 @@ class MainWindow(QMainWindow):
 
         # Info
         info = get_midi_info(midi_data)
+        self._last_known_tempo = info['tempo']
         self._sidebar.set_midi_info(info['num_notes'], info['duration'], info['tempo'])
 
         # Cerrar overlay con delay
