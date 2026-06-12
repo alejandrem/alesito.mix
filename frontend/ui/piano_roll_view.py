@@ -18,6 +18,7 @@ from ui.styles import (
     COLOR_ROLL_BG, COLOR_ROLL_GRID_LINE, COLOR_ROLL_PLAYHEAD,
     ROLL_NOTE_SPEED,
     PIANO_WIDGET_WIDTH,
+    pitch_to_color,
 )
 from engine.midi_parser import NoteEvent
 
@@ -30,6 +31,8 @@ class PianoRollView(QGraphicsView):
 
     seek_requested = pyqtSignal(float)
     note_deleted = pyqtSignal(object)  # Emite el NoteEvent eliminado
+    note_right_clicked = pyqtSignal(object, object)  # (NoteEvent, QPoint global_pos)
+    note_moved = pyqtSignal(object, str, float)  # (NoteEvent, direction, amount)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -173,6 +176,40 @@ class PianoRollView(QGraphicsView):
         self._selected_item = None
         self._selected_note_original_pen = None
 
+    def update_note_item(self, note: NoteEvent):
+        """Actualiza la posición visual de una nota después de un cambio."""
+        if note not in self._notes:
+            return
+        idx = self._notes.index(note)
+        if idx >= len(self._note_items):
+            return
+
+        item = self._note_items[idx]
+        note_idx = note.pitch - PIANO_LOWEST_PITCH
+        y = note_idx * self._row_height
+        x = self._playhead_x + (note.start - self._current_time) * self._pixels_per_second
+        width = note.duration * self._pixels_per_second
+        height = self._row_height - 1
+
+        rect = QRectF(x, y, width, height)
+        item.setRect(rect)
+
+        # Actualizar color
+        color = QColor(note.color)
+        color.setAlpha(220)
+        grad = QLinearGradient(x, y, x, y + height)
+        grad.setColorAt(0, color.lighter(120))
+        grad.setColorAt(1, color)
+        item.setBrush(QBrush(grad))
+
+        border_color = color.darker(130)
+        border_color.setAlpha(100)
+        item.setPen(QPen(border_color, 0.5))
+
+        # Actualizar opacidad
+        opacity = 0.5 + (note.velocity / 127) * 0.5
+        item.setOpacity(opacity)
+
     # ── Crear items gráficos ─────────────────────────────────────────────────
 
     def _create_note_items(self):
@@ -283,6 +320,13 @@ class PianoRollView(QGraphicsView):
             self._selected_note_original_pen = item.pen()
             item.setPen(QPen(QColor("white"), 2.0))
             
+            # Ola 4: Clic derecho para mostrar panel
+            if event.button() == Qt.MouseButton.RightButton:
+                idx = self._note_items.index(item)
+                note = self._notes[idx]
+                global_pos = event.globalPosition().toPoint()
+                self.note_right_clicked.emit(note, global_pos)
+            
         super().mousePressEvent(event)
 
     def keyPressEvent(self, event):
@@ -290,17 +334,53 @@ class PianoRollView(QGraphicsView):
             if self._selected_item and self._selected_item in self._note_items:
                 idx = self._note_items.index(self._selected_item)
                 note = self._notes[idx]
-                
+
                 # Remover de las listas
                 self._notes.remove(note)
                 self._scene.removeItem(self._selected_item)
                 self._note_items.remove(self._selected_item)
-                
+
                 self._selected_item = None
                 self._selected_note_original_pen = None
-                
+
                 # Avisar al resto del programa
                 self.note_deleted.emit(note)
+
+        elif event.key() in (Qt.Key.Key_Up, Qt.Key.Key_Down,
+                             Qt.Key.Key_Left, Qt.Key.Key_Right):
+            # Mover nota con flechas (Ola 5)
+            if self._selected_item and self._selected_item in self._note_items:
+                idx = self._note_items.index(self._selected_item)
+                note = self._notes[idx]
+                direction = event.key()
+
+                if direction == Qt.Key.Key_Up:
+                    # Subir pitch 1 semitono
+                    if note.pitch < PIANO_HIGHEST_PITCH:
+                        note.pitch += 1
+                        note.color = pitch_to_color(note.pitch)
+                        self.update_note_item(note)
+                        self.note_moved.emit(note, "pitch", note.pitch)
+                elif direction == Qt.Key.Key_Down:
+                    # Bajar pitch 1 semitono
+                    if note.pitch > PIANO_LOWEST_PITCH:
+                        note.pitch -= 1
+                        note.color = pitch_to_color(note.pitch)
+                        self.update_note_item(note)
+                        self.note_moved.emit(note, "pitch", note.pitch)
+                elif direction == Qt.Key.Key_Right:
+                    # Mover adelante 0.05 segundos
+                    note.start += 0.05
+                    note.end += 0.05
+                    self.update_note_item(note)
+                    self.note_moved.emit(note, "time", 0.05)
+                elif direction == Qt.Key.Key_Left:
+                    # Mover atrás 0.05 segundos
+                    if note.start >= 0.05:
+                        note.start -= 0.05
+                        note.end -= 0.05
+                        self.update_note_item(note)
+                        self.note_moved.emit(note, "time", -0.05)
         else:
             super().keyPressEvent(event)
 

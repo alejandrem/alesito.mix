@@ -13,10 +13,11 @@ from PyQt6.QtWidgets import (
     QSplitter, QMessageBox, QApplication,
 )
 
-from ui.styles import QSS, SIDEBAR_WIDTH, PIANO_WIDGET_WIDTH
+from ui.styles import QSS, SIDEBAR_WIDTH, PIANO_WIDGET_WIDTH, pitch_to_color
 from ui.sidebar import Sidebar
 from ui.piano_widget import PianoWidget
 from ui.piano_roll_view import PianoRollView
+from ui.note_info_panel import NoteInfoPanel
 from engine.playback_engine import PlaybackEngine
 from transcription.transcription_worker import TranscriptionWorker
 from engine.midi_parser import parse_midi, get_midi_info
@@ -51,6 +52,10 @@ class MainWindow(QMainWindow):
         from ui.loading_overlay import LoadingOverlay
         self._overlay = LoadingOverlay(parent=self)
         self._overlay.cancel_clicked.connect(self._on_cancel_transcription)
+
+        # Panel de información (Ola 4)
+        self._note_info_panel = NoteInfoPanel(self)
+        self._note_info_panel.hide()
 
         self._setup_ui()
         self._connect_signals()
@@ -113,6 +118,15 @@ class MainWindow(QMainWindow):
         # Piano Roll → Eventos interactivos
         self._piano_roll.seek_requested.connect(self._on_seek)
         self._piano_roll.note_deleted.connect(self._on_note_deleted)
+        self._piano_roll.note_right_clicked.connect(self._on_note_right_clicked)
+
+        # Panel de info y edición (Ola 4 + Ola 5)
+        self._note_info_panel.pause_requested.connect(self._playback.pause)
+        self._note_info_panel.note_changed.connect(self._on_note_changed_realtime)
+        self._note_info_panel.note_change_committed.connect(self._on_note_change_committed)
+
+        # Piano Roll → Movimiento con flechas (Ola 5)
+        self._piano_roll.note_moved.connect(self._on_note_moved)
 
         # Scroll sincronizado: piano roll vertical scroll → piano
         self._piano_roll.verticalScrollBar().valueChanged.connect(
@@ -267,6 +281,93 @@ class MainWindow(QMainWindow):
             num_notes = len(self._current_notes)
             duration = self._current_midi_data.get_end_time()
             self._sidebar.set_midi_info(num_notes, duration, self._last_known_tempo)
+
+    def _on_note_right_clicked(self, note, global_pos):
+        """Callback cuando se hace clic derecho en una nota del piano roll."""
+        from PyQt6.QtCore import QPoint
+        self._note_info_panel.set_bpm(self._last_known_tempo)
+        self._note_info_panel.update_info(note)
+        # Mostrar panel ligeramente desplazado del cursor para no tapar la nota
+        offset_pos = QPoint(global_pos.x() + 15, global_pos.y() + 15)
+        self._note_info_panel.move(offset_pos)
+        self._note_info_panel.show()
+        self._note_info_panel.raise_()
+        self._note_info_panel.activateWindow()
+
+    def _on_note_changed_realtime(self, note, changes):
+        """Callback cuando se cambia una nota en tiempo real desde el panel."""
+        # Actualizar visualización del piano roll
+        self._piano_roll.update_note_item(note)
+
+        # Actualizar en el motor de reproducción si es necesario
+        if hasattr(self._playback, 'notes') and note in self._playback.notes:
+            pass  # La nota ya fue modificada directamente
+
+    def _on_note_change_committed(self, note, changes, apply_to_sisters):
+        """Callback cuando se confirma un cambio de nota (botón Guardar)."""
+        # Buscar la nota original en el MIDI antes de que se modificara
+        old_pitch = changes.get("old_pitch", note.pitch)
+        old_start = changes.get("old_start", note.start)
+
+        sisters = []
+        if apply_to_sisters:
+            # Hermanas = notas que suenan al mismo tiempo (alineadas verticalmente)
+            # Buscamos notas con inicio dentro de un rango de 0.05 segundos
+            sisters = [n for n in self._current_notes
+                       if abs(n.start - old_start) < 0.05 and n is not note]
+
+        # Aplicar cambios a hermanas si aplica
+        for sister in sisters:
+            if "velocity" in changes:
+                sister.velocity = changes["velocity"]
+            if "end" in changes:
+                sister.end = changes["end"]
+            if "pitch" in changes:
+                sister.pitch = changes["pitch"]
+                sister.color = pitch_to_color(changes["pitch"])
+            self._piano_roll.update_note_item(sister)
+
+        # Actualizar en el archivo MIDI en memoria
+        if self._current_midi_data and len(self._current_midi_data.instruments) > 0:
+            for pm_note in self._current_midi_data.instruments[0].notes:
+                # Buscar por la posición original de la nota
+                if (abs(pm_note.start - old_start) < 0.001
+                        and pm_note.pitch == old_pitch):
+                    if "pitch" in changes:
+                        pm_note.pitch = changes["pitch"]
+                    if "velocity" in changes:
+                        pm_note.velocity = changes["velocity"]
+                    if "end" in changes:
+                        pm_note.end = changes["end"]
+                    break
+
+            # Aplicar a hermanas en el MIDI también
+            for sister in sisters:
+                for pm_note in self._current_midi_data.instruments[0].notes:
+                    if (abs(pm_note.start - sister.start) < 0.001
+                            and pm_note.pitch == sister.pitch):
+                        if "velocity" in changes:
+                            pm_note.velocity = changes["velocity"]
+                        if "end" in changes:
+                            pm_note.end = changes["end"]
+                        break
+
+    def _on_note_moved(self, note, direction, value):
+        """Callback cuando se mueve una nota con flechas del teclado."""
+        # Actualizar en el MIDI en memoria
+        if self._current_midi_data and len(self._current_midi_data.instruments) > 0:
+            for pm_note in self._current_midi_data.instruments[0].notes:
+                if direction == "pitch":
+                    # Para pitch, buscar por start/end (que no cambiaron)
+                    if abs(pm_note.start - note.start) < 0.001 and abs(pm_note.end - note.end) < 0.001:
+                        pm_note.pitch = note.pitch
+                        break
+                elif direction == "time":
+                    # Para tiempo, buscar por pitch (que no cambió)
+                    if pm_note.pitch == note.pitch and abs(pm_note.end - (note.end - 0.05 if value > 0 else note.end + 0.05)) < 0.01:
+                        pm_note.start = note.start
+                        pm_note.end = note.end
+                        break
 
     def _on_transcription_error(self, msg: str):
         """Callback si la transcripción falla."""

@@ -90,6 +90,14 @@ class PlaybackEngine(QObject):
         # Cargar SoundFont y seleccionar programa 0 (Acoustic Grand Piano)
         sfid = self.fs.sfload(str(sf2))
         self.fs.program_select(0, sfid, 0, 0)  # canal 0, bank 0, programa 0
+        
+        # Ola 3: Activar volumen dinámico real por velocity enviando CC #7 (Volume) y CC #11 (Expression) al canal 0
+        try:
+            self.fs.cc(0, 7, 127)
+            self.fs.cc(0, 11, 127)
+        except Exception:
+            pass
+            
         return True
 
     def load(self, midi_data: pretty_midi.PrettyMIDI, notes: List[NoteEvent]):
@@ -244,9 +252,18 @@ class PlaybackEngine(QObject):
         from ui.styles import pitch_to_color
         color = pitch_to_color(pitch)
 
+        # Ola 3: Matemática pesada para expandir el rango dinámico.
+        # basic-pitch suele agrupar los velocities, así que usamos una curva Gamma (exponencial).
+        # Los velocity suaves se harán MUCHO más suaves, y los fuertes se mantendrán fuertes.
+        # Fórmula: (v / 127)^2.0 * 127
+        norm = velocity / 127.0
+        adjusted_vel = int((norm ** 2.0) * 127)
+        # Asegurarnos de que siempre esté entre 1 y 127 (0 apagaría la nota)
+        adjusted_vel = max(1, min(127, adjusted_vel))
+
         if self.fs:
             try:
-                self.fs.noteon(0, pitch, velocity)
+                self.fs.noteon(0, pitch, adjusted_vel)
             except Exception:
                 pass
         self.note_on.emit(pitch, velocity, color)
