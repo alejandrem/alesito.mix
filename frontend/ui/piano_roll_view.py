@@ -104,7 +104,7 @@ class PianoRollView(QGraphicsView):
         self._zoom = max(1.0, min(zoom, 4.0))
         self._rebuild_scene()
         # Centrar verticalmente en el piano C4 al hacer zoom
-        c4_idx = PIANO_NUM_KEYS - 1 - (60 - PIANO_LOWEST_PITCH)
+        c4_idx = 60 - PIANO_LOWEST_PITCH
         c4_y = c4_idx * self._row_height
         viewport_center = self.viewport().height() / 2
         self.verticalScrollBar().setValue(int(c4_y - viewport_center))
@@ -135,7 +135,22 @@ class PianoRollView(QGraphicsView):
         h = PIANO_NUM_KEYS * self._row_height
         for i in range(PIANO_NUM_KEYS + 1):
             y = i * self._row_height
-            line = self._scene.addLine(0, y, w, y, QPen(QColor(COLOR_ROLL_GRID_LINE), 0.5))
+            
+            # Determinar si es línea de octava (entre Si y Do)
+            # Ahora: graves arriba (fila 0 = A0, pitch 21)
+            # Fila i tiene pitch: PIANO_LOWEST_PITCH + i
+            is_octave_line = False
+            if i > 0 and i < PIANO_NUM_KEYS:
+                higher_pitch = PIANO_LOWEST_PITCH + i
+                if higher_pitch % 12 == 0:  # Si la nota de abajo (mayor pitch) es un Do (C)
+                    is_octave_line = True
+            
+            if is_octave_line:
+                pen = QPen(QColor("#3C3C3C"), 1.5)
+            else:
+                pen = QPen(QColor(COLOR_ROLL_GRID_LINE), 0.5)
+                
+            line = self._scene.addLine(0, y, w, y, pen)
             self._grid_lines.append(line)
         self._scene.setSceneRect(0, 0, w, h)
 
@@ -163,7 +178,7 @@ class PianoRollView(QGraphicsView):
     def _create_note_items(self):
         for note in self._notes:
             note_idx = note.pitch - PIANO_LOWEST_PITCH
-            y = (PIANO_NUM_KEYS - 1 - note_idx) * self._row_height
+            y = note_idx * self._row_height
 
             x = self._playhead_x + (note.start - self._current_time) * self._pixels_per_second
             width = note.duration * self._pixels_per_second
@@ -201,7 +216,20 @@ class PianoRollView(QGraphicsView):
 
         for i in range(PIANO_NUM_KEYS + 1):
             y = i * self._row_height
-            line = self._scene.addLine(0, y, w, y, QPen(QColor(COLOR_ROLL_GRID_LINE), 0.5))
+            
+            # Determinar si es línea de octava (entre Si y Do)
+            is_octave_line = False
+            if i > 0 and i < PIANO_NUM_KEYS:
+                higher_pitch = PIANO_LOWEST_PITCH + i
+                if higher_pitch % 12 == 0:
+                    is_octave_line = True
+                    
+            if is_octave_line:
+                pen = QPen(QColor("#3C3C3C"), 1.5)
+            else:
+                pen = QPen(QColor(COLOR_ROLL_GRID_LINE), 0.5)
+                
+            line = self._scene.addLine(0, y, w, y, pen)
             self._grid_lines.append(line)
 
         self._scene.setSceneRect(0, 0, w, h)

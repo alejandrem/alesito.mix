@@ -57,16 +57,15 @@ COLOR_ROLL_PLAYHEAD = "#C4A265"
 # Octava 0 (A0-B1) → Octava 7 (C7-C8)
 
 OCTAVE_COLORS = [
-    "#8B6914",  # Octava 0 — ámbar oscuro
-    "#A07828",  # Octava 1 — ámbar dorado
-    "#B8862D",  # Octava 2 — cobre cálido
-    "#C49033",  # Octava 3 — cobre brillante
-    "#B07040",  # Octava 4 — terracota
-    "#9A5A3A",  # Octava 5 — terracota oscuro
-    "#7A4A38",  # Octava 6 — granate cálido
-    "#604030",  # Octava 7 — marrón profundo
+    "#593D1B",  # Octava 0 — Grave (Más oscuro/café)
+    "#6B4A1F",  # Octava 1
+    "#795424",  # Octava 2
+    "#875E29",  # Octava 3
+    "#95682E",  # Octava 4
+    "#A37233",  # Octava 5
+    "#B17C38",  # Octava 6
+    "#BF863D",  # Octava 7 — Agudo (Más claro/dorado)
 ]
-
 
 # ── Notas musicales (para mapeo pitch → nombre) ─────────────────────────────
 

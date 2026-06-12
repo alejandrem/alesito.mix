@@ -101,7 +101,7 @@ class PianoWidget(QWidget):
                 continue
 
             idx = pitch - PIANO_LOWEST_PITCH
-            y = (PIANO_NUM_KEYS - 1 - idx) * rh - self._scroll_offset
+            y = idx * rh - self._scroll_offset
             rect = QRect(0, int(y), w, int(rh) + 1)
 
             if pitch in self._active_colors:
@@ -139,7 +139,7 @@ class PianoWidget(QWidget):
                 continue
 
             idx = pitch - PIANO_LOWEST_PITCH
-            y = (PIANO_NUM_KEYS - 1 - idx) * rh - self._scroll_offset
+            y = idx * rh - self._scroll_offset
             rect = QRect(int(black_x), int(y), int(black_w), int(black_h))
 
             if pitch in self._active_colors:
