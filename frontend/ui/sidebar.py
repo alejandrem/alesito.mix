@@ -4,15 +4,15 @@ sidebar.py — Widget de la sidebar: upload, download, play/stop, ajustes de tra
 
 import os
 
-from PyQt6.QtCore import Qt, pyqtSignal, QEvent
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-    QLabel, QProgressBar, QFileDialog, QSlider,
-    QFrame, QSpinBox, QSizePolicy, QScrollArea,
+    QLabel, QFileDialog, QSlider,
+    QFrame, QSpinBox, QScrollArea,
 )
 
 from ui.styles import (
-    COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY, COLOR_GOLD,
+    COLOR_TEXT_SECONDARY, COLOR_GOLD,
     COLOR_WOOD_BORDER, SIDEBAR_WIDTH,
 )
 

@@ -204,15 +204,6 @@ QPushButton:disabled {{
     border-color: {COLOR_GOLD};
 }}
 
-#btn_stop {{
-    background-color: {COLOR_BTN_DANGER};
-    border-color: #6B3030;
-}}
-
-#btn_stop:hover {{
-    background-color: {COLOR_BTN_DANGER_HOVER};
-}}
-
 /* ── Botones de reproducción (Play/Pause) ─────────────────── */
 #btn_play {{
     background-color: {COLOR_BG_DARK};
@@ -258,11 +249,6 @@ QPushButton:disabled {{
     font-size: 14px;
     font-weight: bold;
     color: {COLOR_TEXT_SECONDARY};
-}}
-
-#btn_play:hover {{
-    border-color: {COLOR_GOLD};
-    background-color: {COLOR_WOOD_LIGHT};
 }}
 
 #btn_pause {{
@@ -442,40 +428,6 @@ QSpinBox {{
     padding: 3px 6px;
     font-size: 11px;
     min-height: 16px;
-}}
-
-#btn_play:hover {{
-    border-color: {COLOR_GOLD};
-    background-color: {COLOR_WOOD_LIGHT};
-}}
-
-#btn_stop {{
-    background-color: {COLOR_WOOD_MEDIUM};
-    border: 2px solid {COLOR_GOLD_DIM};
-    border-radius: 20px;
-    min-width: 40px;
-    max-width: 40px;
-    min-height: 40px;
-    max-height: 40px;
-    font-size: 16px;
-}}
-
-#btn_stop:hover {{
-    border-color: {COLOR_GOLD};
-    background-color: {COLOR_WOOD_LIGHT};
-}}
-
-#btn_auto {{
-    background-color: {COLOR_BG_DARK};
-    border: 2px solid {COLOR_WOOD_BORDER};
-    border-radius: 20px;
-    min-width: 40px;
-    max-width: 40px;
-    min-height: 40px;
-    max-height: 40px;
-    font-size: 14px;
-    font-weight: bold;
-    color: {COLOR_TEXT_SECONDARY};
 }}
 
 #btn_auto:hover {{

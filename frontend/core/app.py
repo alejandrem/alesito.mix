@@ -2,15 +2,13 @@
 app.py — MainWindow principal de alesito.mix: layout, señales y orquestación.
 """
 
-import sys
 import os
 import pathlib
 
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
-    QSplitter, QMessageBox, QApplication,
+    QMessageBox, QApplication,
 )
 
 from ui.styles import QSS, SIDEBAR_WIDTH, PIANO_WIDGET_WIDTH, pitch_to_color
@@ -298,10 +296,6 @@ class MainWindow(QMainWindow):
         """Callback cuando se cambia una nota en tiempo real desde el panel."""
         # Actualizar visualización del piano roll
         self._piano_roll.update_note_item(note)
-
-        # Actualizar en el motor de reproducción si es necesario
-        if hasattr(self._playback, 'notes') and note in self._playback.notes:
-            pass  # La nota ya fue modificada directamente
 
     def _on_note_change_committed(self, note, changes, apply_to_sisters):
         """Callback cuando se confirma un cambio de nota (botón Guardar)."""
