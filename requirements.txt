@@ -2,3 +2,14 @@ PyQt6
 basic-pitch
 pretty_midi
 pyfluidsynth
+resampy==0.4.2
+mir_eval
+librosa
+scipy
+scikit-learn
+numpy
+numba
+llvmlite
+mediainflow
+pydub
+onnxruntime
