@@ -88,6 +88,10 @@ PIANO_WIDGET_WIDTH = 120   # px, ancho fijo del widget del piano
 # Sidebar
 SIDEBAR_WIDTH = 240        # px
 
+# TopBar
+TOP_BAR_HEIGHT = 42        # px, altura expandida
+TOP_BAR_HOVER_ZONE = 50    # px, zona de hover en la parte superior
+
 
 # ── Layout y animación ──────────────────────────────────────────────────────
 

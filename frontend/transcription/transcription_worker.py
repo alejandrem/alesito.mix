@@ -2,9 +2,7 @@
 transcription_worker.py — QThread que ejecuta basic-pitch predict() en background.
 """
 
-import sys
 import pathlib
-from typing import Optional
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
@@ -33,14 +31,6 @@ class TranscriptionWorker(QThread):
                 self.error.emit(f"Archivo no encontrado: {self.audio_path}")
                 return
 
-            # Asegurar que basic_pitch esté en el path
-            frontend_dir = pathlib.Path(__file__).resolve().parent.parent
-            basic_pitch_dir = frontend_dir.parent / "basic-pitch"
-            if str(basic_pitch_dir) not in sys.path:
-                sys.path.insert(0, str(basic_pitch_dir))
-            if str(frontend_dir) not in sys.path:
-                sys.path.insert(0, str(frontend_dir))
-
             self.status.emit("Cargando modelo de transcripción...")
             self.progress.emit(5)
 
@@ -52,8 +42,7 @@ class TranscriptionWorker(QThread):
             except ImportError as e:
                 self.error.emit(
                     f"basic-pitch no se pudo importar:\n{str(e)}\n\n"
-                    f"basic-pitch-main path: {basic_pitch_dir}\n"
-                    f"¿Existe? {basic_pitch_dir.exists()}"
+                    f"Instálalo con: pip install basic-pitch"
                 )
                 return
 

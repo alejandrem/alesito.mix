@@ -5,17 +5,18 @@ app.py — MainWindow principal de alesito.mix: layout, señales y orquestación
 import os
 import pathlib
 
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QTimer, QEvent
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QMessageBox, QApplication,
 )
 
-from ui.styles import QSS, SIDEBAR_WIDTH, PIANO_WIDGET_WIDTH, pitch_to_color
+from ui.styles import QSS, SIDEBAR_WIDTH, PIANO_WIDGET_WIDTH, pitch_to_color, TOP_BAR_HOVER_ZONE
 from ui.sidebar import Sidebar
 from ui.piano_widget import PianoWidget
 from ui.piano_roll_view import PianoRollView
 from ui.note_info_panel import NoteInfoPanel
+from ui.top_bar import TopBar
 from engine.playback_engine import PlaybackEngine
 from transcription.transcription_worker import TranscriptionWorker
 from engine.midi_parser import parse_midi, get_midi_info
@@ -55,8 +56,14 @@ class MainWindow(QMainWindow):
         self._note_info_panel = NoteInfoPanel(self)
         self._note_info_panel.hide()
 
+        # TopBar colapsable
+        self._top_bar = TopBar(parent=self)
+        self._top_bar.setMaximumHeight(0)  # Oculta por defecto (altura 0)
+
         self._setup_ui()
         self._connect_signals()
+        # EventFilter global para detectar mouse en la parte superior
+        QApplication.instance().installEventFilter(self)
 
     def _find_sf2(self) -> str:
         """Busca el SoundFont SF2 en el directorio assets."""
@@ -79,25 +86,37 @@ class MainWindow(QMainWindow):
         return ""
 
     def _setup_ui(self):
-        """Configura el layout principal: Sidebar | Piano | PianoRoll."""
+        """Configura el layout principal: TopBar | Sidebar | Piano | PianoRoll."""
         central = QWidget()
         self.setCentralWidget(central)
 
-        main_layout = QHBoxLayout(central)
+        # Layout raíz vertical: top bar arriba, contenido abajo
+        root_layout = QVBoxLayout(central)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        root_layout.setSpacing(0)
+
+        # ── TopBar (colapsable) ──────────────────────────────────────────
+        root_layout.addWidget(self._top_bar)
+
+        # ── Contenido horizontal ─────────────────────────────────────────
+        content_widget = QWidget()
+        main_layout = QHBoxLayout(content_widget)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        # ── Sidebar ──────────────────────────────────────────────────────────
+        # Sidebar
         self._sidebar = Sidebar()
         main_layout.addWidget(self._sidebar)
 
-        # ── Piano Vertical ───────────────────────────────────────────────────
+        # Piano Vertical
         self._piano = PianoWidget()
         main_layout.addWidget(self._piano)
 
-        # ── Piano Roll View ──────────────────────────────────────────────────
+        # Piano Roll View
         self._piano_roll = PianoRollView()
-        main_layout.addWidget(self._piano_roll, 1)  # stretch factor 1
+        main_layout.addWidget(self._piano_roll, 1)
+
+        root_layout.addWidget(content_widget, 1)
 
     def _connect_signals(self):
         """Conecta todas las señales entre componentes."""
@@ -133,6 +152,7 @@ class MainWindow(QMainWindow):
 
         # Playback → Visualización
         self._playback.position_changed.connect(self._piano_roll.on_position_changed)
+        self._playback.position_changed.connect(self._on_position_changed)
         self._playback.note_on.connect(self._piano.on_note_on)
         self._playback.note_off.connect(self._piano.on_note_off)
         self._playback.playback_started.connect(self._on_playback_started)
@@ -140,6 +160,10 @@ class MainWindow(QMainWindow):
         self._playback.playback_stopped.connect(self._on_playback_stopped)
         self._playback.playback_finished.connect(self._on_playback_finished)
         self._playback.error.connect(self._on_playback_error)
+
+        # TopBar → Playback
+        self._top_bar.seek_requested.connect(self._on_seek)
+        self._top_bar.skip_requested.connect(self._on_skip)
 
     # ── Slots: Upload / Transcripción ────────────────────────────────────────
 
@@ -230,6 +254,9 @@ class MainWindow(QMainWindow):
 
         # Cargar en el motor de reproducción
         self._playback.load(midi_data, notes)
+
+        # Extraer waveform del audio original
+        self._extract_waveform(self._current_audio_path)
 
         # Habilitar descarga
         stem = pathlib.Path(self._current_audio_path).stem
@@ -446,6 +473,10 @@ class MainWindow(QMainWindow):
         # Cargar en el motor de reproducción
         self._playback.load(midi_data, notes)
 
+        # Re-extrar waveform si hay audio
+        if self._current_audio_path:
+            self._extract_waveform(self._current_audio_path)
+
         # Restaurar posición guardada
         pos = getattr(self, '_saved_position', 0.0)
         if pos > 0 and pos < duration:
@@ -490,6 +521,16 @@ class MainWindow(QMainWindow):
     def _on_speed_changed(self, speed: float):
         """Cambia la velocidad de reproducción."""
         self._playback.set_speed(speed)
+
+    def _on_skip(self, delta: float):
+        """Adelanta o retrocede la reproducción en delta segundos."""
+        new_time = self._playback.current_time + delta
+        new_time = max(0.0, min(new_time, self._playback.duration))
+        self._playback.seek(new_time)
+
+    def _on_position_changed(self, pos: float):
+        """Actualiza la top bar con la posición actual."""
+        self._top_bar.update_position(pos, self._playback.duration)
 
     def _on_playback_started(self):
         self._sidebar.set_playing_state(True)
@@ -544,3 +585,33 @@ class MainWindow(QMainWindow):
         """Limpia recursos al cerrar."""
         self._playback.stop()
         event.accept()
+
+    # ── EventFilter para hover de TopBar ──────────────────────────────────
+
+    def eventFilter(self, obj, event):
+        """Detecta mouse en la parte superior para mostrar la TopBar."""
+        if event.type() == QEvent.Type.MouseMove:
+            # Convertir posición global a coordenadas de la ventana
+            global_pos = event.globalPosition().toPoint()
+            local_pos = self.mapFromGlobal(global_pos)
+            if local_pos.y() < TOP_BAR_HOVER_ZONE:
+                self._top_bar.expand()
+        return super().eventFilter(obj, event)
+
+    # ── Extracción de waveform ────────────────────────────────────────────
+
+    def _extract_waveform(self, audio_path: str, num_bars: int = 300):
+        """Extrae la envolvente de amplitud del archivo de audio."""
+        try:
+            import librosa
+            import numpy as np
+            y, sr = librosa.load(audio_path, sr=22050, mono=True)
+            hop_length = max(1, len(y) // num_bars)
+            rms = librosa.feature.rms(y=y, frame_length=2048, hop_length=hop_length)[0]
+            # Normalizar a 0-1
+            if rms.max() > 0:
+                rms = rms / rms.max()
+            duration = librosa.get_duration(y=y, sr=sr)
+            self._top_bar.set_waveform(rms.astype(np.float32), duration)
+        except Exception:
+            pass  # Si falla, la waveform queda vacía pero la app sigue

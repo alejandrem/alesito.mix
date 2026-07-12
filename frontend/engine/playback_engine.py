@@ -71,6 +71,8 @@ class PlaybackEngine(QObject):
 
         try:
             self.fs = fluidsynth.Synth()
+            # Aumentar polifonía para evitar "Failed to allocate a synthesis process"
+            self.fs.setting("synth.polyphony", 512)
 
             # Delegar el inicio y la anulación de errores a nuestro archivo externo
             from engine.midi_setup import init_fluidsynth
