@@ -1,0 +1,4 @@
+PyQt6
+basic-pitch
+pretty_midi
+pyfluidsynth
