@@ -44,6 +44,7 @@ class Sidebar(QWidget):
     play_clicked = pyqtSignal()
     stop_clicked = pyqtSignal()
     speed_changed = pyqtSignal(float)
+    volume_changed = pyqtSignal(float)
     settings_changed = pyqtSignal(dict)
     zoom_changed = pyqtSignal(float)
     apply_clicked = pyqtSignal(dict)
@@ -179,6 +180,29 @@ class Sidebar(QWidget):
         self._label_speed_value.setAlignment(Qt.AlignmentFlag.AlignCenter)
         speed_row.addWidget(self._label_speed_value)
         layout.addLayout(speed_row)
+
+        layout.addWidget(self._separator())
+
+        # ── Volumen ─────────────────────────────────────────────────────────
+        vol_title = QLabel("VOLUMEN")
+        vol_title.setObjectName("label_speed")
+        vol_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(vol_title)
+
+        vol_row = QHBoxLayout()
+        vol_row.setSpacing(8)
+        self._volume_slider = NoScrollSlider(Qt.Orientation.Horizontal)
+        self._volume_slider.setMinimum(0)
+        self._volume_slider.setMaximum(200)
+        self._volume_slider.setValue(100)
+        self._volume_slider.valueChanged.connect(self._on_volume_changed)
+        vol_row.addWidget(self._volume_slider)
+
+        self._label_volume_value = QLabel("100%")
+        self._label_volume_value.setMinimumWidth(40)
+        self._label_volume_value.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        vol_row.addWidget(self._label_volume_value)
+        layout.addLayout(vol_row)
 
         layout.addWidget(self._separator())
 
@@ -518,6 +542,11 @@ class Sidebar(QWidget):
         speed = value / 100.0
         self._label_speed_value.setText(f"{speed:.1f}x")
         self.speed_changed.emit(speed)
+
+    def _on_volume_changed(self, value: int):
+        gain = value / 100.0
+        self._label_volume_value.setText(f"{value}%")
+        self.volume_changed.emit(gain)
 
     def _on_settings_changed(self):
         settings = self.get_transcription_settings()

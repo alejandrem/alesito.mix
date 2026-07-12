@@ -43,6 +43,7 @@ class PlaybackEngine(QObject):
         self.start_real_time = 0.0
         self.speed = 1.0
         self.duration = 0.0
+        self.volume_gain = 1.0  # Multiplicador de volumen (0.0 – 2.0)
 
         # Índice del próximo evento a procesar
         self._next_note_idx = 0
@@ -206,6 +207,10 @@ class PlaybackEngine(QObject):
 
         self.speed = max(0.25, min(speed, 2.0))
 
+    def set_volume(self, gain: float):
+        """Ajusta el multiplicador de volumen (0.0 – 2.0)."""
+        self.volume_gain = max(0.0, min(gain, 2.0))
+
     def _on_tick(self):
         """Tick del timer: actualiza posición y dispara eventos MIDI."""
         if not self.playing:
@@ -250,17 +255,12 @@ class PlaybackEngine(QObject):
 
     def _note_on(self, pitch: int, velocity: int):
         """Envía note_on a FluidSynth y emite señal con color."""
-        # Buscar el color de la nota
         from ui.styles import pitch_to_color
         color = pitch_to_color(pitch)
 
-        # Ola 3: Matemática pesada para expandir el rango dinámico.
-        # basic-pitch suele agrupar los velocities, así que usamos una curva Gamma (exponencial).
-        # Los velocity suaves se harán MUCHO más suaves, y los fuertes se mantendrán fuertes.
-        # Fórmula: (v / 127)^2.0 * 127
+        # Curva Gamma + gain global
         norm = velocity / 127.0
-        adjusted_vel = int((norm ** 2.0) * 127)
-        # Asegurarnos de que siempre esté entre 1 y 127 (0 apagaría la nota)
+        adjusted_vel = int((norm ** 2.0) * 127 * self.volume_gain)
         adjusted_vel = max(1, min(127, adjusted_vel))
 
         if self.fs:

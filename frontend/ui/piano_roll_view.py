@@ -6,10 +6,10 @@ from typing import List, Optional
 
 from PyQt6.QtCore import Qt, QRectF, pyqtSlot, pyqtSignal
 from PyQt6.QtGui import (
-    QPainter, QColor, QPen, QBrush, QLinearGradient,
+    QPainter, QColor, QPen, QBrush, QLinearGradient, QPainterPath,
 )
 from PyQt6.QtWidgets import (
-    QGraphicsView, QGraphicsScene, QGraphicsRectItem,
+    QGraphicsView, QGraphicsScene, QGraphicsItem,
     QGraphicsLineItem,
 )
 
@@ -21,6 +21,73 @@ from ui.styles import (
     pitch_to_color,
 )
 from engine.midi_parser import NoteEvent
+
+NOTE_CORNER_RADIUS = 4
+NOTE_GAP_PX = 6
+
+
+class NoteItem(QGraphicsItem):
+    """Item gráfico para notas con esquinas redondeadas."""
+
+    def __init__(self, x, y, w, h, color: QColor, opacity: float, parent=None):
+        super().__init__(parent)
+        self._rect = QRectF(x, y, w, h)
+        self._color = QColor(color)
+        self._note_opacity = opacity
+        border = QColor(color).darker(130)
+        border.setAlpha(100)
+        self._pen = QPen(border, 0.5)
+        self._update_path()
+
+    def _update_path(self):
+        self._path = QPainterPath()
+        self._path.addRoundedRect(self._rect, NOTE_CORNER_RADIUS, NOTE_CORNER_RADIUS)
+
+    def boundingRect(self):
+        return self._rect
+
+    def shape(self):
+        return self._path
+
+    def paint(self, painter, option, widget=None):
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setOpacity(self._note_opacity)
+
+        grad = QLinearGradient(
+            self._rect.x(), self._rect.y(),
+            self._rect.x(), self._rect.y() + self._rect.height()
+        )
+        c = QColor(self._color)
+        grad.setColorAt(0, c.lighter(120))
+        grad.setColorAt(1, c)
+        painter.setBrush(QBrush(grad))
+
+        painter.setPen(self._pen)
+        painter.drawPath(self._path)
+
+    def pen(self):
+        return self._pen
+
+    def setPen(self, pen: QPen):
+        self._pen = QPen(pen)
+        self.update()
+
+    def set_geometry(self, x, y, w, h):
+        self.prepareGeometryChange()
+        self._rect = QRectF(x, y, w, h)
+        self._update_path()
+
+    def set_color(self, color: QColor, keep_pen: bool = False):
+        self._color = QColor(color)
+        if not keep_pen:
+            border = QColor(color).darker(130)
+            border.setAlpha(100)
+            self._pen = QPen(border, 0.5)
+        self.update()
+
+    def set_note_opacity(self, opacity: float):
+        self._note_opacity = opacity
+        self.update()
 
 
 class PianoRollView(QGraphicsView):
@@ -55,10 +122,10 @@ class PianoRollView(QGraphicsView):
 
         # Datos
         self._notes: List[NoteEvent] = []
-        self._note_items: List[QGraphicsRectItem] = []
+        self._note_items: List[NoteItem] = []
         self._grid_lines: List[QGraphicsLineItem] = []
         self._playhead: Optional[QGraphicsLineItem] = None
-        self._selected_item: Optional[QGraphicsRectItem] = None
+        self._selected_item: Optional[NoteItem] = None
         self._selected_note_original_pen: Optional[QPen] = None
 
         # Hacer que el view pueda recibir eventos de teclado
@@ -76,6 +143,9 @@ class PianoRollView(QGraphicsView):
         self._base_row_height = 0.0
         self._base_pps = ROLL_NOTE_SPEED  # pixels per second base
 
+        # Precomputación de notas adyacentes (para gap entre notas)
+        self._prev_note_of: dict[int, NoteEvent] = {}  # id(note) → nota anterior del mismo pitch
+
         self._recalc_scale()
         self._draw_grid()
         self._draw_playhead()
@@ -87,6 +157,28 @@ class PianoRollView(QGraphicsView):
     @property
     def _pixels_per_second(self):
         return self._base_pps * self._zoom
+
+    # ── Helpers de geometría ───────────────────────────────────────────────
+
+    def _note_rect_with_gap(self, note: NoteEvent) -> tuple[float, float, float, float]:
+        """Retorna (x, y, width, height) aplicando gap entre notas consecutivas del mismo pitch."""
+        note_idx = note.pitch - PIANO_LOWEST_PITCH
+        y = note_idx * self._row_height
+        x = self._playhead_x + (note.start - self._current_time) * self._pixels_per_second
+        width = note.duration * self._pixels_per_second
+        height = self._row_height - 1
+
+        # Lookup O(1): nota anterior del mismo pitch (precomputada)
+        prev = self._prev_note_of.get(id(note))
+        if prev is not None:
+            gap_sec = note.start - prev.end
+            if gap_sec >= 0:
+                gap_px = gap_sec * self._pixels_per_second
+                if gap_px < NOTE_GAP_PX:
+                    reduction = min(NOTE_GAP_PX - gap_px, width * 0.4)
+                    x += reduction / 2
+                    width -= reduction
+        return x, y, max(width, 1), height
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -159,10 +251,22 @@ class PianoRollView(QGraphicsView):
 
     # ── Carga de datos ───────────────────────────────────────────────────────
 
+    def _precompute_adjacency(self):
+        """Precomputa qué nota es la inmediatamente anterior de cada nota, por pitch."""
+        self._prev_note_of.clear()
+        by_pitch: dict[int, list[NoteEvent]] = {}
+        for n in self._notes:
+            by_pitch.setdefault(n.pitch, []).append(n)
+        for notes in by_pitch.values():
+            notes.sort(key=lambda n: n.start)
+            for i in range(1, len(notes)):
+                self._prev_note_of[id(notes[i])] = notes[i - 1]
+
     def load_notes(self, notes: List[NoteEvent], duration: float):
         self._notes = notes
         self._duration = duration
         self._current_time = 0.0
+        self._precompute_adjacency()
         self._rebuild_scene()
         # Ajustar scroll al inicio
         self.verticalScrollBar().setValue(0)
@@ -176,7 +280,7 @@ class PianoRollView(QGraphicsView):
         self._selected_item = None
         self._selected_note_original_pen = None
 
-    def update_note_item(self, note: NoteEvent):
+    def update_note_item(self, note: NoteEvent, keep_pen: bool = False):
         """Actualiza la posición visual de una nota después de un cambio."""
         if note not in self._notes:
             return
@@ -184,60 +288,24 @@ class PianoRollView(QGraphicsView):
         if idx >= len(self._note_items):
             return
 
+        self._precompute_adjacency()
+
         item = self._note_items[idx]
-        note_idx = note.pitch - PIANO_LOWEST_PITCH
-        y = note_idx * self._row_height
-        x = self._playhead_x + (note.start - self._current_time) * self._pixels_per_second
-        width = note.duration * self._pixels_per_second
-        height = self._row_height - 1
+        x, y, width, height = self._note_rect_with_gap(note)
 
-        rect = QRectF(x, y, width, height)
-        item.setRect(rect)
-
-        # Actualizar color
-        color = QColor(note.color)
-        color.setAlpha(220)
-        grad = QLinearGradient(x, y, x, y + height)
-        grad.setColorAt(0, color.lighter(120))
-        grad.setColorAt(1, color)
-        item.setBrush(QBrush(grad))
-
-        border_color = color.darker(130)
-        border_color.setAlpha(100)
-        item.setPen(QPen(border_color, 0.5))
-
-        # Actualizar opacidad
-        opacity = 0.5 + (note.velocity / 127) * 0.5
-        item.setOpacity(opacity)
+        item.set_geometry(x, y, width, height)
+        item.set_color(QColor(note.color), keep_pen=keep_pen)
+        item.set_note_opacity(0.5 + (note.velocity / 127) * 0.5)
 
     # ── Crear items gráficos ─────────────────────────────────────────────────
 
     def _create_note_items(self):
         for note in self._notes:
-            note_idx = note.pitch - PIANO_LOWEST_PITCH
-            y = note_idx * self._row_height
-
-            x = self._playhead_x + (note.start - self._current_time) * self._pixels_per_second
-            width = note.duration * self._pixels_per_second
-            height = self._row_height - 1
-
-            rect = QRectF(x, y, width, height)
-            item = QGraphicsRectItem(rect)
+            x, y, width, height = self._note_rect_with_gap(note)
 
             color = QColor(note.color)
-            color.setAlpha(220)
-
-            grad = QLinearGradient(x, y, x, y + height)
-            grad.setColorAt(0, color.lighter(120))
-            grad.setColorAt(1, color)
-            item.setBrush(QBrush(grad))
-
-            border_color = color.darker(130)
-            border_color.setAlpha(100)
-            item.setPen(QPen(border_color, 0.5))
-
             opacity = 0.5 + (note.velocity / 127) * 0.5
-            item.setOpacity(opacity)
+            item = NoteItem(x, y, width, height, color, opacity)
 
             self._scene.addItem(item)
             self._note_items.append(item)
@@ -291,10 +359,8 @@ class PianoRollView(QGraphicsView):
         for i, note in enumerate(self._notes):
             if i < len(self._note_items):
                 item = self._note_items[i]
-                new_x = self._playhead_x + (note.start - self._current_time) * self._pixels_per_second
-                width = note.duration * self._pixels_per_second
-                rect = QRectF(new_x, item.rect().y(), width, item.rect().height())
-                item.setRect(rect)
+                x, y, width, height = self._note_rect_with_gap(note)
+                item.set_geometry(x, y, width, height)
 
     # ── Slots ────────────────────────────────────────────────────────────────
 
@@ -314,7 +380,7 @@ class PianoRollView(QGraphicsView):
             self._selected_item = None
             self._selected_note_original_pen = None
 
-        if isinstance(item, QGraphicsRectItem) and item in self._note_items:
+        if isinstance(item, NoteItem) and item in self._note_items:
             # Seleccionar nueva nota
             self._selected_item = item
             self._selected_note_original_pen = item.pen()
@@ -359,27 +425,27 @@ class PianoRollView(QGraphicsView):
                     if note.pitch < PIANO_HIGHEST_PITCH:
                         note.pitch += 1
                         note.color = pitch_to_color(note.pitch)
-                        self.update_note_item(note)
+                        self.update_note_item(note, keep_pen=True)
                         self.note_moved.emit(note, "pitch", note.pitch)
                 elif direction == Qt.Key.Key_Down:
                     # Bajar pitch 1 semitono
                     if note.pitch > PIANO_LOWEST_PITCH:
                         note.pitch -= 1
                         note.color = pitch_to_color(note.pitch)
-                        self.update_note_item(note)
+                        self.update_note_item(note, keep_pen=True)
                         self.note_moved.emit(note, "pitch", note.pitch)
                 elif direction == Qt.Key.Key_Right:
                     # Mover adelante 0.05 segundos
                     note.start += 0.05
                     note.end += 0.05
-                    self.update_note_item(note)
+                    self.update_note_item(note, keep_pen=True)
                     self.note_moved.emit(note, "time", 0.05)
                 elif direction == Qt.Key.Key_Left:
                     # Mover atrás 0.05 segundos
                     if note.start >= 0.05:
                         note.start -= 0.05
                         note.end -= 0.05
-                        self.update_note_item(note)
+                        self.update_note_item(note, keep_pen=True)
                         self.note_moved.emit(note, "time", -0.05)
         else:
             super().keyPressEvent(event)

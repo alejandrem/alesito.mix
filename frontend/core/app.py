@@ -127,6 +127,7 @@ class MainWindow(QMainWindow):
         self._sidebar.play_clicked.connect(self._on_play)
         self._sidebar.stop_clicked.connect(self._on_stop)
         self._sidebar.speed_changed.connect(self._on_speed_changed)
+        self._sidebar.volume_changed.connect(self._playback.set_volume)
         self._sidebar.zoom_changed.connect(self._piano_roll.set_zoom)
         self._sidebar.zoom_changed.connect(self._piano.set_zoom)
         self._sidebar.apply_clicked.connect(self._on_apply_settings)

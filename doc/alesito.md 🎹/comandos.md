@@ -1,7 +1,8 @@
-solo inicia el run.bat y disfruta de las cosas hermosas de la vidaaa
+dentro de alesito mix 
 
 ```bash
 git clone https://github.com/spotify/basic-pitch.git
+git clone https://github.com/musescore/MuseScore
 
 cd frontend                  #<- aqui entra el boticario
 
@@ -15,6 +16,7 @@ sudo pacman -Sy python-pyqt6 fluidsynth
 despues
 ```bash 
 git clone https://github.com/spotify/basic-pitch.git
+git clone https://github.com/musescore/MuseScore
 
 cd fronend 
 
