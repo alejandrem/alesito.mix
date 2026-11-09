@@ -57,11 +57,20 @@ class PlaybackEngine(QObject):
     def _init_fluidsynth(self) -> bool:
         """Inicializa FluidSynth con el SoundFont."""
         try:
+            if os.name == 'nt':
+                frontend_dir = pathlib.Path(__file__).resolve().parent.parent
+                if hasattr(os, 'add_dll_directory'):
+                    try:
+                        os.add_dll_directory(str(frontend_dir))
+                    except Exception:
+                        pass
+                if str(frontend_dir) not in os.environ.get("PATH", ""):
+                    os.environ["PATH"] = str(frontend_dir) + os.pathsep + os.environ.get("PATH", "")
             import fluidsynth
-        except ImportError:
+        except ImportError as e:
             self.error.emit(
-                "pyfluidsynth no está instalado.\n"
-                "Ejecuta: pip install pyfluidsynth"
+                f"No se pudo cargar la librería FluidSynth:\n{str(e)}\n\n"
+                "Verifica que libfluidsynth-3.dll y sus dependencias estén en la carpeta frontend/."
             )
             return False
 
