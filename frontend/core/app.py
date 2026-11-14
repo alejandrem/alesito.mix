@@ -66,23 +66,48 @@ class MainWindow(QMainWindow):
         QApplication.instance().installEventFilter(self)
 
     def _find_sf2(self) -> str:
-        """Busca el SoundFont SF2 en el directorio assets."""
+        """Busca el SoundFont SF2 en frontend o librerías del sistema."""
         base = pathlib.Path(__file__).resolve().parent.parent
-        # Buscamos en _base_dir (que es frontend)
         sf2_paths = [
             base / "FluidR3_GM.sf2",
             base / "fluidr3_gm.sf2",
             base / "FluidR3.sf2",
+            base / "TimGM6mb.sf2",
+            base / "assets" / "FluidR3_GM.sf2",
+            base / "assets" / "TimGM6mb.sf2",
         ]
         for p in sf2_paths:
             if p.exists():
                 return str(p)
-        # Fallback: cualquier .sf2 en frontend/
-        assets = base
-        if assets.exists():
-            for f in assets.iterdir():
-                if f.suffix.lower() == ".sf2":
-                    return str(f)
+
+        # Fallback: cualquier .sf2 en frontend/ o assets/
+        for search_dir in [base, base / "assets"]:
+            if search_dir.exists():
+                for f in search_dir.iterdir():
+                    if f.suffix.lower() == ".sf2":
+                        return str(f)
+
+        # Fallback 2: SoundFont incluido en pretty_midi
+        try:
+            import pretty_midi
+            pm_sf2 = pathlib.Path(pretty_midi.__file__).resolve().parent / "TimGM6mb.sf2"
+            if pm_sf2.exists():
+                return str(pm_sf2)
+        except Exception:
+            pass
+
+        # Fallback 3: Rutas típicas en Linux
+        system_paths = [
+            "/usr/share/sounds/sf2/default.sf2",
+            "/usr/share/sounds/sf2/FluidR3_GM.sf2",
+            "/usr/share/sounds/sf2/TimGM6mb.sf2",
+            "/usr/share/soundfonts/default.sf2",
+            "/usr/share/soundfonts/FluidR3_GM.sf2",
+        ]
+        for sp in system_paths:
+            if pathlib.Path(sp).exists():
+                return sp
+
         return ""
 
     def _setup_ui(self):

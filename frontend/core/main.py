@@ -5,7 +5,11 @@ Configura sys.path, QApplication y lanza la ventana principal en fullscreen.
 
 import sys
 import os
+import logging
 from pathlib import Path
+
+# Silenciar advertencias de dependencias opcionales (coreml, tensorflow)
+logging.getLogger().setLevel(logging.ERROR)
 
 # ── Configurar sys.path para incluir el frontend ────────────────────────
 _core_dir = Path(__file__).resolve().parent

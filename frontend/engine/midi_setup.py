@@ -9,9 +9,19 @@ def init_fluidsynth(fs):
     Retorna True si el audio arrancó correctamente.
     """
 
-    # Silenciar los mensajes de ALSA
-    os.environ["ALSA_CONFIG_PATH"] = "/dev/null"
-    os.environ["FLUIDSYNTH_DONT_CREATE_SDL_AUDIO"] = "1"
+    # Suprimir ruidos de consola de ALSA limpiamente sin romper la configuración
+    if sys.platform.startswith("linux"):
+        try:
+            import ctypes
+            error_func_t = ctypes.CFUNCTYPE(None, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p)
+            def _silent_handler(filename, line, function, err, fmt):
+                pass
+            global _c_alsa_handler
+            _c_alsa_handler = error_func_t(_silent_handler)
+            asound = ctypes.cdll.LoadLibrary("libasound.so.2")
+            asound.snd_lib_error_set_handler(_c_alsa_handler)
+        except Exception:
+            pass
 
     # Elegir drivers según plataforma
     if sys.platform == "win32":
@@ -19,7 +29,7 @@ def init_fluidsynth(fs):
     elif sys.platform == "darwin":
         drivers = ["coreaudio", "portaudio"]
     else:
-        drivers = ["pulseaudio", "pipewire", "alsa", "portaudio", "jack"]
+        drivers = ["pulseaudio", "pipewire", "alsa", "portaudio", "sdl3", "jack"]
 
     for driver in drivers:
         try:
