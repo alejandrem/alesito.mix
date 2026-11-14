@@ -75,6 +75,8 @@ echo ""
 # Ejecutar
 echo "[INFO] No encontramos modulos CUDA, asi que usaremos la CPU para la IA uwu"
 export TF_CPP_MIN_LOG_LEVEL=3
+export QT_LOGGING_RULES="qt.qpa.wayland*=false;qt.qpa.wayland.textinput*=false"
+export PYTHONWARNINGS="ignore"
 python "$DIR/core/main.py"
 
 if [ $? -ne 0 ]; then
