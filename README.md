@@ -269,8 +269,3 @@ Texto tenue	#6B5B45
 - doc/mejoras uwu/ — Planes de implementación
 - doc/top_bar_plan.md — Plan de la TopBar
 - unificacion.md — Plan de integración MuseScore
-Licencia 📄
-Proyecto personal de desarrollo educativo.
-Desarrollado con PyQt6, FluidSynth, basic-pitch (Spotify) y mucha pacienciaaa
-
----
