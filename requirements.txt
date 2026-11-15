@@ -1,3 +1,4 @@
+setuptools<70
 PyQt6
 basic-pitch
 pretty_midi
