@@ -8,6 +8,7 @@ pub enum AppError {
     NotFound(String),
     BadRequest(String),
     Internal(String),
+    TooManyJobs(String),
 }
 
 impl IntoResponse for AppError {
@@ -16,6 +17,7 @@ impl IntoResponse for AppError {
             AppError::NotFound(m) => (StatusCode::NOT_FOUND, m),
             AppError::BadRequest(m) => (StatusCode::BAD_REQUEST, m),
             AppError::Internal(m) => (StatusCode::INTERNAL_SERVER_ERROR, m),
+            AppError::TooManyJobs(m) => (StatusCode::SERVICE_UNAVAILABLE, m),
         };
         (status, Json(json!({ "error": msg }))).into_response()
     }
