@@ -11,3 +11,7 @@ frontend/FluidR3_GM.sf2
 *.sf2
 *.dll
 [Mm]use[Ss]core*/
+
+# Rust build artifacts
+backend/target/
+target/
