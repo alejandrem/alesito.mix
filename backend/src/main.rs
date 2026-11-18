@@ -52,7 +52,11 @@ async fn main() {
                 .collect();
             for id in expired {
                 if let Some(job) = jobs.remove(&id) {
+                    // Borrar tanto el audio original como el WAV renderizado.
                     if let Some(path) = job.audio_path {
+                        let _ = tokio::fs::remove_file(path).await;
+                    }
+                    if let Some(path) = job.rendered_audio {
                         let _ = tokio::fs::remove_file(path).await;
                     }
                 }
