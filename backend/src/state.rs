@@ -6,6 +6,37 @@ use basic_pitch_transcription::{Transcriber, TranscriptionResult};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
+/// Configuración de límites de recursos del servidor.
+#[derive(Clone, Debug)]
+pub struct ServerConfig {
+    /// Máximo de jobs activos en memoria (default 50).
+    pub max_jobs: usize,
+    /// Tamaño máximo de archivo de audio en bytes (default 100 MB).
+    pub max_audio_size_bytes: u64,
+    /// Timeout para fluidsynth en segundos (default 120s).
+    pub fluidsynth_timeout_secs: u64,
+}
+
+impl Default for ServerConfig {
+    fn default() -> Self {
+        Self {
+            max_jobs: std::env::var("MAX_JOBS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(50),
+            max_audio_size_bytes: std::env::var("MAX_AUDIO_SIZE_MB")
+                .ok()
+                .and_then(|v| v.parse::<u64>().ok())
+                .map(|mb| mb * 1024 * 1024)
+                .unwrap_or(100 * 1024 * 1024),
+            fluidsynth_timeout_secs: std::env::var("FLUIDSYNTH_TIMEOUT_SECS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(120),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum JobStatus {
     Queued,
@@ -43,6 +74,7 @@ pub struct AppState {
     pub jobs: Arc<RwLock<HashMap<Uuid, Job>>>,
     pub temp_dir: PathBuf,
     pub soundfont: PathBuf,
+    pub config: ServerConfig,
 }
 
 impl AppState {
@@ -52,6 +84,7 @@ impl AppState {
             jobs: Arc::new(RwLock::new(HashMap::new())),
             temp_dir,
             soundfont,
+            config: ServerConfig::default(),
         }
     }
 }
