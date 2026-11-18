@@ -33,6 +33,7 @@ pub struct Job {
     pub audio_path: Option<PathBuf>,
     pub result: Option<TranscriptionResult>,
     pub error: Option<String>,
+    pub created_at: std::time::Instant,
 }
 
 #[derive(Clone)]

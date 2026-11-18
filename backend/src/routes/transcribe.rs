@@ -35,22 +35,54 @@ pub async fn create_transcription(
     // Leer el archivo de audio del multipart.
     let mut audio_bytes: Option<Vec<u8>> = None;
     let mut filename = String::from("audio");
+    let mut frame_threshold: f64 = 0.3;
+    let mut melodia_trick: bool = true;
+    let mut midi_tempo: f64 = 120.0;
+    let mut multiple_pitch_bends: bool = false;
+
     while let Some(field) = multipart
         .next_field()
         .await
         .map_err(|e| AppError::BadRequest(e.to_string()))?
     {
-        if field.name() == Some("audio") {
-            filename = field.file_name().unwrap_or("audio").to_string();
-            let data = field
-                .bytes()
-                .await
-                .map_err(|e| AppError::BadRequest(e.to_string()))?;
-            audio_bytes = Some(data.to_vec());
+        match field.name() {
+            Some("audio") => {
+                filename = field.file_name().unwrap_or("audio").to_string();
+                let data = field
+                    .bytes()
+                    .await
+                    .map_err(|e| AppError::BadRequest(e.to_string()))?;
+                audio_bytes = Some(data.to_vec());
+            }
+            Some("frame_threshold") => {
+                let v = field.text().await.map_err(|e| AppError::BadRequest(e.to_string()))?;
+                frame_threshold = v.parse().map_err(|_| AppError::BadRequest("frame_threshold invalido".into()))?;
+            }
+            Some("melodia_trick") => {
+                let v = field.text().await.map_err(|e| AppError::BadRequest(e.to_string()))?;
+                melodia_trick = v == "true" || v == "1";
+            }
+            Some("midi_tempo") => {
+                let v = field.text().await.map_err(|e| AppError::BadRequest(e.to_string()))?;
+                midi_tempo = v.parse().map_err(|_| AppError::BadRequest("midi_tempo invalido".into()))?;
+            }
+            Some("multiple_pitch_bends") => {
+                let v = field.text().await.map_err(|e| AppError::BadRequest(e.to_string()))?;
+                multiple_pitch_bends = v == "true" || v == "1";
+            }
+            _ => {}
         }
     }
 
     let data = audio_bytes.ok_or_else(|| AppError::BadRequest("falta el campo 'audio'".into()))?;
+
+    // Validacion de parametros.
+    if !(0.0..=1.0).contains(&frame_threshold) {
+        return Err(AppError::BadRequest("frame_threshold fuera de rango".into()));
+    }
+    if midi_tempo <= 0.0 {
+        return Err(AppError::BadRequest("midi_tempo invalido".into()));
+    }
 
     // Guardar en disco temporal.
     let job_id = Uuid::new_v4();
@@ -74,6 +106,7 @@ pub async fn create_transcription(
                 audio_path: Some(audio_path.clone()),
                 result: None,
                 error: None,
+                created_at: std::time::Instant::now(),
             },
         );
     }
@@ -89,7 +122,12 @@ pub async fn create_transcription(
             }
         }
 
-        let transcriber = state_clone.transcriber.clone();
+        let mut transcriber = (*state_clone.transcriber).clone();
+        transcriber.config.note_detection.frame_threshold = frame_threshold;
+        transcriber.config.note_detection.melodia_trick = melodia_trick;
+        transcriber.config.midi_tempo = midi_tempo;
+        transcriber.config.multiple_pitch_bends = multiple_pitch_bends;
+
         let path = audio_path.clone();
         let outcome = tokio::task::spawn_blocking(move || transcriber.transcribe(&path)).await;
 
