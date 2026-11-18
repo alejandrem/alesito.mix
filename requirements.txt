@@ -8,7 +8,7 @@ mir_eval
 librosa
 scipy
 scikit-learn
-numpy
+numpy<2
 numba
 llvmlite
 pydub
