@@ -9,6 +9,16 @@ use uuid::Uuid;
 use crate::error::{AppError, AppResult};
 use crate::state::{AppState, Job, JobStatus};
 
+/// Borra los archivos temporales de un job (audio original + WAV renderizado).
+fn cleanup_job_files(job: &Job) {
+    if let Some(ref path) = job.audio_path {
+        let _ = std::fs::remove_file(path);
+    }
+    if let Some(ref path) = job.rendered_audio {
+        let _ = std::fs::remove_file(path);
+    }
+}
+
 #[derive(Serialize)]
 pub struct JobResponse {
     pub id: Uuid,
@@ -32,27 +42,63 @@ pub async fn create_transcription(
     State(state): State<AppState>,
     mut multipart: Multipart,
 ) -> AppResult<Json<serde_json::Value>> {
-    // Leer el archivo de audio del multipart.
-    let mut audio_bytes: Option<Vec<u8>> = None;
-    let mut filename = String::from("audio");
+    // Verificar limite de jobs activos.
+    {
+        let jobs = state.jobs.read().await;
+        if jobs.len() >= state.config.max_jobs {
+            return Err(AppError::TooManyJobs(format!(
+                "servidor sobrecargado (maximo {} jobs activos)",
+                state.config.max_jobs
+            )));
+        }
+    }
+
+    // Leer el archivo de audio del multipart, streaming directo a disco.
     let mut frame_threshold: f64 = 0.3;
     let mut melodia_trick: bool = true;
     let mut midi_tempo: f64 = 120.0;
     let mut multiple_pitch_bends: bool = false;
+    let mut audio_path: Option<std::path::PathBuf> = None;
 
-    while let Some(field) = multipart
+    let job_id = Uuid::new_v4();
+    let max_size = state.config.max_audio_size_bytes;
+
+    while let Some(mut field) = multipart
         .next_field()
         .await
         .map_err(|e| AppError::BadRequest(e.to_string()))?
     {
         match field.name() {
             Some("audio") => {
-                filename = field.file_name().unwrap_or("audio").to_string();
-                let data = field
-                    .bytes()
+                let filename = field.file_name().unwrap_or("audio").to_string();
+                let ext = std::path::Path::new(&filename)
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("wav");
+                let path = state.temp_dir.join(format!("{job_id}.{ext}"));
+
+                // Streaming directo a disco con limite de tamaño.
+                let mut file = tokio::fs::File::create(&path)
                     .await
-                    .map_err(|e| AppError::BadRequest(e.to_string()))?;
-                audio_bytes = Some(data.to_vec());
+                    .map_err(|e| AppError::Internal(e.to_string()))?;
+                let mut total_size: u64 = 0;
+
+                use futures::StreamExt;
+                use tokio::io::AsyncWriteExt;
+                while let Some(chunk) = field.next().await {
+                    let chunk = chunk.map_err(|e| AppError::BadRequest(e.to_string()))?;
+                    total_size += chunk.len() as u64;
+                    if total_size > max_size {
+                        // Limite excedido: borrar el archivo parcial.
+                        let _ = tokio::fs::remove_file(&path).await;
+                        return Err(AppError::BadRequest(format!(
+                            "audio demasiado grande (maximo {} MB)",
+                            max_size / 1024 / 1024
+                        )));
+                    }
+                    file.write_all(&chunk).await.map_err(|e| AppError::Internal(e.to_string()))?;
+                }
+                audio_path = Some(path);
             }
             Some("frame_threshold") => {
                 let v = field.text().await.map_err(|e| AppError::BadRequest(e.to_string()))?;
@@ -74,26 +120,18 @@ pub async fn create_transcription(
         }
     }
 
-    let data = audio_bytes.ok_or_else(|| AppError::BadRequest("falta el campo 'audio'".into()))?;
+    let audio_path = audio_path
+        .ok_or_else(|| AppError::BadRequest("falta el campo 'audio'".into()))?;
 
     // Validacion de parametros.
     if !(0.0..=1.0).contains(&frame_threshold) {
+        let _ = tokio::fs::remove_file(&audio_path).await;
         return Err(AppError::BadRequest("frame_threshold fuera de rango".into()));
     }
     if midi_tempo <= 0.0 {
+        let _ = tokio::fs::remove_file(&audio_path).await;
         return Err(AppError::BadRequest("midi_tempo invalido".into()));
     }
-
-    // Guardar en disco temporal.
-    let job_id = Uuid::new_v4();
-    let ext = std::path::Path::new(&filename)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("wav");
-    let audio_path = state.temp_dir.join(format!("{job_id}.{ext}"));
-    tokio::fs::write(&audio_path, &data)
-        .await
-        .map_err(|e| AppError::Internal(e.to_string()))?;
 
     // Crear job.
     {
@@ -114,6 +152,7 @@ pub async fn create_transcription(
 
     // Lanzar transcripción en background.
     let state_clone = state.clone();
+    let timeout_secs = state.config.fluidsynth_timeout_secs;
     tokio::spawn(async move {
         // Marcar como running.
         {
@@ -137,25 +176,37 @@ pub async fn create_transcription(
             match outcome {
                 Ok(Ok(result)) => {
                     let wav_path = state_clone.temp_dir.join(format!("{job_id}.wav"));
-                    match crate::audio::render_midi_to_wav(&result.midi_data, &state_clone.soundfont, &wav_path) {
+                    match crate::audio::render_midi_to_wav(&result.midi_data, &state_clone.soundfont, &wav_path, timeout_secs) {
                         Ok(()) => {
                             job.result = Some(result);
                             job.rendered_audio = Some(wav_path);
                             job.status = JobStatus::Done;
                         }
                         Err(e) => {
+                            // Borrar archivos temporales al fallar.
                             job.status = JobStatus::Failed;
                             job.error = Some(format!("render audio: {e}"));
+                            cleanup_job_files(job);
+                            // Limpiar los campos para que el cleanup no intente borrar de nuevo.
+                            job.audio_path = None;
+                            job.rendered_audio = None;
                         }
                     }
                 }
                 Ok(Err(e)) => {
+                    // Borrar archivos temporales al fallar la transcripción.
                     job.status = JobStatus::Failed;
                     job.error = Some(e.to_string());
+                    cleanup_job_files(job);
+                    job.audio_path = None;
+                    job.rendered_audio = None;
                 }
                 Err(e) => {
                     job.status = JobStatus::Failed;
                     job.error = Some(format!("tarea cancelada: {e}"));
+                    cleanup_job_files(job);
+                    job.audio_path = None;
+                    job.rendered_audio = None;
                 }
             }
         }
