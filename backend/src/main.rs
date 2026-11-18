@@ -7,6 +7,7 @@ use std::path::PathBuf;
 
 use axum::routing::{get, post};
 use axum::Router;
+use uuid::Uuid;
 use basic_pitch_transcription::Transcriber;
 use tower_http::cors::CorsLayer;
 use tracing_subscriber::EnvFilter;
@@ -31,7 +32,32 @@ async fn main() {
     let transcriber = Transcriber::load(std::path::Path::new(&model_dir))
         .expect("no se pudo cargar el modelo");
 
-    let state = AppState::new(transcriber, temp_dir);
+    let state = AppState::new(transcriber, temp_dir.clone());
+
+    // Limpieza periodica de jobs antiguos (TTL 1 hora).
+    let cleanup_state = state.clone();
+    let cleanup_dir = temp_dir.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(300));
+        loop {
+            interval.tick().await;
+            let now = std::time::Instant::now();
+            let mut jobs = cleanup_state.jobs.write().await;
+            let expired: Vec<Uuid> = jobs
+                .iter()
+                .filter(|(_, j)| now.duration_since(j.created_at).as_secs() > 3600)
+                .map(|(id, _)| *id)
+                .collect();
+            for id in expired {
+                if let Some(job) = jobs.remove(&id) {
+                    if let Some(path) = job.audio_path {
+                        let _ = tokio::fs::remove_file(path).await;
+                    }
+                }
+            }
+            let _ = cleanup_dir;
+        }
+    });
 
     let app = Router::new()
         .route("/health", get(health))
