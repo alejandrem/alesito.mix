@@ -33,6 +33,7 @@ pub struct Job {
     pub audio_path: Option<PathBuf>,
     pub result: Option<TranscriptionResult>,
     pub error: Option<String>,
+    pub rendered_audio: Option<PathBuf>,
     pub created_at: std::time::Instant,
 }
 
@@ -41,14 +42,16 @@ pub struct AppState {
     pub transcriber: Arc<Transcriber>,
     pub jobs: Arc<RwLock<HashMap<Uuid, Job>>>,
     pub temp_dir: PathBuf,
+    pub soundfont: PathBuf,
 }
 
 impl AppState {
-    pub fn new(transcriber: Transcriber, temp_dir: PathBuf) -> Self {
+    pub fn new(transcriber: Transcriber, temp_dir: PathBuf, soundfont: PathBuf) -> Self {
         Self {
             transcriber: Arc::new(transcriber),
             jobs: Arc::new(RwLock::new(HashMap::new())),
             temp_dir,
+            soundfont,
         }
     }
 }

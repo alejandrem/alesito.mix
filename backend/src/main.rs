@@ -1,3 +1,4 @@
+mod audio;
 mod error;
 mod routes;
 mod state;
@@ -14,7 +15,7 @@ use tracing_subscriber::EnvFilter;
 
 use crate::routes::health::health;
 use crate::routes::transcribe::{
-    create_transcription, get_job, get_midi, get_notes,
+    create_transcription, get_audio, get_job, get_midi, get_notes,
 };
 use crate::state::AppState;
 
@@ -32,7 +33,8 @@ async fn main() {
     let transcriber = Transcriber::load(std::path::Path::new(&model_dir))
         .expect("no se pudo cargar el modelo");
 
-    let state = AppState::new(transcriber, temp_dir.clone());
+    let soundfont = crate::audio::default_soundfont();
+    let state = AppState::new(transcriber, temp_dir.clone(), soundfont);
 
     // Limpieza periodica de jobs antiguos (TTL 1 hora).
     let cleanup_state = state.clone();
@@ -65,6 +67,7 @@ async fn main() {
         .route("/jobs/:id", get(get_job))
         .route("/jobs/:id/notes", get(get_notes))
         .route("/jobs/:id/midi", get(get_midi))
+        .route("/jobs/:id/audio", get(get_audio))
         .layer(CorsLayer::permissive())
         .with_state(state);
 

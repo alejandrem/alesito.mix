@@ -106,6 +106,7 @@ pub async fn create_transcription(
                 audio_path: Some(audio_path.clone()),
                 result: None,
                 error: None,
+                rendered_audio: None,
                 created_at: std::time::Instant::now(),
             },
         );
@@ -135,8 +136,18 @@ pub async fn create_transcription(
         if let Some(job) = jobs.get_mut(&job_id) {
             match outcome {
                 Ok(Ok(result)) => {
-                    job.result = Some(result);
-                    job.status = JobStatus::Done;
+                    let wav_path = state_clone.temp_dir.join(format!("{job_id}.wav"));
+                    match crate::audio::render_midi_to_wav(&result.midi_data, &state_clone.soundfont, &wav_path) {
+                        Ok(()) => {
+                            job.result = Some(result);
+                            job.rendered_audio = Some(wav_path);
+                            job.status = JobStatus::Done;
+                        }
+                        Err(e) => {
+                            job.status = JobStatus::Failed;
+                            job.error = Some(format!("render audio: {e}"));
+                        }
+                    }
                 }
                 Ok(Err(e)) => {
                     job.status = JobStatus::Failed;
@@ -216,5 +227,28 @@ pub async fn get_midi(
         StatusCode::OK,
         [("content-type", "audio/midi")],
         result.midi_data.clone(),
+    ))
+}
+
+pub async fn get_audio(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> AppResult<impl IntoResponse> {
+    let jobs = state.jobs.read().await;
+    let job = jobs.get(&id).ok_or_else(|| AppError::NotFound("job no encontrado".into()))?;
+    let path = job
+        .rendered_audio
+        .clone()
+        .ok_or_else(|| AppError::BadRequest("audio no listo".into()))?;
+    drop(jobs);
+
+    let bytes = tokio::fs::read(&path)
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+
+    Ok((
+        StatusCode::OK,
+        [("content-type", "audio/wav")],
+        bytes,
     ))
 }

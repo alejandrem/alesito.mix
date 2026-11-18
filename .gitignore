@@ -15,3 +15,5 @@ frontend/FluidR3_GM.sf2
 # Rust build artifacts
 backend/target/
 target/
+
+backend/tmp/
