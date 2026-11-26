@@ -1,5 +1,7 @@
 # Fase 3: Renderizado de audio con FluidSynth
 
+**Estado: Completada.**
+
 **Objetivo:** implementar la Opción B: el backend renderiza el MIDI a WAV
 con FluidSynth y streamea el audio al frontend.
 
@@ -16,7 +18,7 @@ brew install fluid-synth
 sudo pacman -S fluidsynth
 ```
 
-SoundFont: `FluidR3_GM.sf2` (ya incluido en `alesito.mix`).
+SoundFont real usada: `backend/assets/TimGM6mb.sf2` (incluida en el repo). El plan original mencionaba `FluidR3_GM.sf2`.
 
 ## 3.2. Dependencias de Rust
 
@@ -63,6 +65,12 @@ Job done (midi_data en memoria)
 - Comparar duración del WAV con `duration_seconds` del job.
 - Probar SoundFont faltante (error tipado).
 
+## Notas de implementación real
+
+- Se usa el binario `fluidsynth` por CLI.
+- El audio renderizado se cachea por job (`rendered_audio`).
+- Además existe `POST /render-midi` para renderizar MIDI subido directamente.
+
 ## Entregable
 
-Audio fiel al escritorio, servido por el backend.
+Audio fiel al escritorio, servido por el backend. **Cumplido.**

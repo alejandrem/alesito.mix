@@ -1,56 +1,27 @@
 # Fase 4: Frontend Vue mínimo
 
+**Estado: Parcialmente completada (MVP funcional, estructura parcialmente alineada).**
+
 **Objetivo:** interfaz web mínima usable: subir audio, transcribir, ver notas,
 reproducir y descargar MIDI.
 
-## 4.1. Stack frontend
+## Lo que está hecho
 
-- Vue 3 (Composition API) + TypeScript.
-- Vite (dev server + build).
-- Tailwind CSS.
-- Pinia (estado global).
-- Axios o fetch para REST.
+- ✅ Vue 3 + TypeScript + Vite.
+- ✅ Flujo end-to-end: cargar MP3/MIDI, transcribir audio, mostrar notas, reproducir audio renderizado, descargar MIDI.
+- ✅ Polling de estado del job con fallback; también hay soporte WS integrado (ver fase 5).
+- ✅ Pinia instalado y store base en `web/src/stores/transcription.ts`.
+- ✅ Cliente HTTP con Axios en `web/src/api/client.ts`.
+- ✅ Separación inicial de componentes: `UploadPanel`, `TranscribeButton`, `NotesList`, `AudioPlayer`, `DownloadButton`.
+- ✅ Piano roll básico ya integrado (`PianoRoll.vue`), adelantando parte de fase 6.
 
-## 4.2. Estructura
+## Diferencias / pendientes honestos
 
-```text
-frontend/
-├── index.html
-├── vite.config.ts
-├── tailwind.config.js
-└── src/
-    ├── main.ts
-    ├── App.vue
-    ├── api/
-    │   └── client.ts          # llamadas REST
-    ├── stores/
-    │   └── transcription.ts   # estado del job
-    └── components/
-        ├── UploadPanel.vue
-        ├── TranscribeButton.vue
-        ├── NotesList.vue
-        ├── AudioPlayer.vue     # reproduce el WAV del backend
-        └── DownloadButton.vue
-```
-
-## 4.3. Flujo de la UI mínima
-
-1. Usuario selecciona archivo.
-2. Clic en "Transcribir" → `POST /transcribe`.
-3. Polling o WebSocket de estado.
-4. Al terminar: mostrar notas, habilitar reproducción y descarga.
-
-## 4.4. Reproducción
-
-`<audio>` HTML5 apuntando a `/jobs/:id/audio`. Controles nativos
-(play/pause/seek) son suficientes para v1.
-
-## 4.5. Pruebas
-
-- Subir cada formato de audio y transcribir.
-- Verificar que el reproductor carga el WAV.
-- Verificar descarga del MIDI.
+- ⚠️ **Tailwind no está integrado**. El estilo actual sigue en `web/src/style.css` y clases existentes; migrar a Tailwind sería un rewrite grande.
+- ⚠️ `App.vue` sigue concentrando bastante orquestación (no está totalmente descompuesto al 100% como sugiere el plan).
+- ⚠️ `TranscribeButton.vue` y `AudioPlayer.vue` existen, pero la UI principal todavía usa parte del flujo/botones directamente en `App.vue`.
+- ⚠️ La estructura no es idéntica al árbol del plan original, aunque cubre la intención funcional.
 
 ## Entregable
 
-Web usable end-to-end sin piano roll.
+Web usable end-to-end. **Cumplido en funcionalidad**, con deuda de estructura/estilo respecto al plan original.

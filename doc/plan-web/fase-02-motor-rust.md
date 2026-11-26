@@ -1,5 +1,7 @@
 # Fase 2: Integración del motor Rust
 
+**Estado: Completada.**
+
 **Objetivo:** conectar el backend Axum con `basic-pitch-transcription` y
 validar la paridad con el escritorio.
 

@@ -1,31 +1,26 @@
 # Fase 6: Piano roll interactivo
 
+**Estado: Parcialmente completada.**
+
 **Objetivo:** visualizar las notas como en la app de escritorio, con
 rendimiento suficiente para miles de notas.
 
-## 6.1. Tecnología
+## Lo que está hecho
 
-- Canvas 2D (no DOM por nota).
-- Virtualización: solo se dibujan las notas visibles en el viewport.
-- Zoom horizontal y vertical.
+- ✅ `web/src/PianoRoll.vue` usa Canvas 2D.
+- ✅ Renderiza notas, playhead fijo en la base (el roll avanza), y teclado de 88 teclas.
+- ✅ Teclado se ilumina con notas activas.
+- ✅ Renderiza solo notas visibles en la ventana temporal actual (virtualización básica por tiempo).
+- ✅ El piano rellena el ancho disponible.
+- ✅ Botón en sidebar para alternar orientación **Vertical/Horizontal**; en horizontal se muestra teclado lateral.
 
-## 6.2. Componente `PianoRoll.vue`
+## Diferencias / pendientes honestos
 
-- Props: `notes`, `duration`, `currentTime`.
-- Render loop con `requestAnimationFrame`.
-- Playhead dorado sincronizado con el audio.
-- Scroll vertical sincronizado con el teclado.
-
-## 6.3. Teclado de piano
-
-- 88 teclas (A0–C8) como componente separado.
-- Iluminación por nota activa, por color de octava.
-
-## 6.4. Pruebas
-
-- Renderizar 2000+ notas sin caída de FPS (< 16 ms/frame).
-- Sincronización playhead ↔ audio.
+- ⚠️ No hay zoom/scroll estilo editor completo como lo describía el plan original (se probaron controles y se quitaron por decisión de UI; ahora la vista es más simple).
+- ⚠️ La virtualización es básica por ventana temporal; no hay viewport scroll completo 2D tipo editor con miles de notas optimizado y medido.
+- ⚠️ No hay pruebas formales de rendimiento 2000+ notas / <16ms frame.
+- ⚠️ La sincronización es funcional para reproducción actual, pero no es un editor completo de piano roll con navegación avanzada.
 
 ## Entregable
 
-Piano roll web con paridad visual básica.
+Piano roll web con paridad visual básica. **Cumplido en versión básica/útil**, no en paridad completa de editor.

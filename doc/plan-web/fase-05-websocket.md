@@ -1,33 +1,25 @@
 # Fase 5: Progreso en tiempo real (WebSocket)
 
+**Estado: Parcialmente completada.**
+
 **Objetivo:** comunicar el progreso de la transcripción al frontend sin polling.
 
-## 5.1. Protocolo
+## Lo que está hecho
 
-Endpoint: `WS /ws/:id`.
+- ✅ Endpoint WebSocket `WS /ws/:id` en backend (`backend/src/main.rs`, `backend/src/routes/transcribe.rs`).
+- ✅ Eventos de progreso por job con `broadcast` en `backend/src/state.rs`.
+- ✅ Mensajes JSON tipo `progress`, `done`, `error`.
+- ✅ Composable frontend `web/src/composables/useJobProgress.ts`.
+- ✅ Frontend usa WS y cae a polling si la conexión WS falla.
+- ✅ Vite proxy configurado con `ws: true`.
+- ✅ Barra de progreso simple en UI cuando hay procesamiento.
 
-Mensajes (JSON):
+## Diferencias / pendientes honestos
 
-```json
-{ "type": "progress", "stage": "decoding", "percent": 10 }
-{ "type": "progress", "stage": "transcribing", "percent": 45, "window": 12, "total": 30 }
-{ "type": "done", "notes": 1842, "duration": 163.71 }
-{ "type": "error", "message": "..." }
-```
-
-## 5.2. Backend
-
-- Axum WebSocket upgrade.
-- Canal `tokio::sync::mpsc` entre el job y el socket.
-- El motor reporta progreso por ventana (requiere extender `Transcriber`
-  con un callback o canal; evaluar en esta fase).
-
-## 5.3. Frontend
-
-- Composable `useJobProgress(jobId)`.
-- Barra de progreso + mensajes animados (como el overlay del escritorio).
-- Reconexión automática si se pierde la conexión.
+- ⚠️ **No hay progreso granular real por ventanas del motor** (`window/total` durante inferencia) porque `basic-pitch-transcription` se usa como caja negra. Hoy se emiten etapas/estados útiles (`queued`, `transcribing`, `done`, `error`), pero no el desglose fino que imagina el plan.
+- ⚠️ La UI de progreso es simple (mensaje + barra básica), no el overlay/animación completa estilo desktop.
+- ⚠️ No hay reconexión sofisticada con reintentos/backoff más allá del fallback a polling.
 
 ## Entregable
 
-Progreso en vivo durante la transcripción.
+Progreso en vivo básico durante la transcripción. **Cumplido parcialmente**: hay canal WS real y fallback, pero falta granularidad fina del motor.

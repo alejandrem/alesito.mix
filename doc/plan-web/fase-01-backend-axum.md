@@ -1,5 +1,7 @@
 # Fase 1: Backend Axum mínimo
 
+**Estado: Completada (con diferencias menores de estructura).**
+
 **Objetivo:** tener un servidor HTTP que reciba audio y devuelva el MIDI
 generado por el motor Rust.
 
@@ -64,6 +66,12 @@ con `Arc`. No se recarga por petición.
   por `midly`).
 - Un archivo inexistente / formato inválido devuelve error tipado.
 
+## Notas de implementación real
+
+- `Job`/estado vive en `backend/src/state.rs` (el plan sugería `jobs.rs` separado).
+- Además de los endpoints del plan, existen `/transcribe-audio`, `/render-midi` y `/jobs/:id/audio`.
+- El backend también sirve `web/dist` si está disponible (`WEB_DIST_DIR`), para un solo puerto en producción.
+
 ## Entregable
 
-Servidor que transcribe un audio y devuelve el MIDI, probado con `curl`.
+Servidor que transcribe un audio y devuelve el MIDI. **Cumplido.**
