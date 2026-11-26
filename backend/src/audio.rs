@@ -111,21 +111,24 @@ pub fn default_soundfont() -> PathBuf {
         return PathBuf::from(path);
     }
 
-    let frontend_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../frontend");
+    let bundled_soundfont = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("assets")
+        .join("TimGM6mb.sf2");
     [
-        frontend_dir.join("TimGM6mb.sf2"),
-        frontend_dir.join("FluidR3_GM.sf2"),
+        bundled_soundfont.clone(),
         PathBuf::from("/usr/share/sounds/sf2/TimGM6mb.sf2"),
         PathBuf::from("/usr/share/sounds/sf2/FluidR3_GM.sf2"),
         PathBuf::from("/usr/share/sounds/sf2/default-GM.sf2"),
     ]
     .into_iter()
     .find(|path| path.is_file())
-    .unwrap_or_else(|| frontend_dir.join("TimGM6mb.sf2"))
+    .unwrap_or(bundled_soundfont)
 }
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::{default_soundfont, render_midi_to_wav};
 
     #[test]
@@ -145,5 +148,18 @@ mod tests {
         assert_eq!(&wav[..4], b"RIFF");
         assert_eq!(&wav[8..12], b"WAVE");
         std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn bundled_soundfont_is_stored_with_the_rust_backend() {
+        let soundfont = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("assets")
+            .join("TimGM6mb.sf2");
+
+        assert!(
+            soundfont.is_file(),
+            "missing bundled SoundFont: {}",
+            soundfont.display()
+        );
     }
 }

@@ -9,7 +9,7 @@ __pycache__/
 frontend/assets/FluidR3_GM.sf2
 frontend/FluidR3_GM.sf2
 *.sf2
-!frontend/TimGM6mb.sf2
+!backend/assets/TimGM6mb.sf2
 *.dll
 [Mm]use[Ss]core*/
 
