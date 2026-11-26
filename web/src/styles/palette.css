@@ -1,0 +1,153 @@
+:root {
+  /* Base */
+  --color-bg: #ffffff;
+  --color-bg-subtle: #fafafa;
+  --color-bg-muted: #f7f7f7;
+  --color-bg-soft: #f3f3f3;
+  --color-bg-elevated: #ffffff;
+  --color-bg-inverse: #111111;
+  --color-bg-inverse-hover: #333333;
+  --color-bg-keyboard-frame: #e8e8e8;
+  --color-bg-disabled: #f2f2f2;
+
+  /* Text */
+  --color-text: #171717;
+  --color-text-strong: #111111;
+  --color-text-secondary: #222222;
+  --color-text-muted: #555555;
+  --color-text-subtle: #666666;
+  --color-text-faint: #696969;
+  --color-text-dim: #707070;
+  --color-text-soft: #777777;
+  --color-text-placeholder: #888888;
+  --color-text-disabled: #999999;
+  --color-text-inverse: #ffffff;
+  --color-text-error: #8d2929;
+
+  /* Borders */
+  --color-border: #e5e5e5;
+  --color-border-soft: #e4e4e4;
+  --color-border-muted: #dedede;
+  --color-border-strong: #d8d8d8;
+  --color-border-mid: #d5d5d5;
+  --color-border-key: #c9c9c9;
+  --color-border-piano: #999999;
+  --color-border-piano-bottom: #777777;
+  --color-border-key-white: #aaaaaa;
+  --color-border-black: #000000;
+  --color-border-inverse: #111111;
+  --color-border-focus: #111111;
+
+  /* Accent / brand */
+  --color-accent: #111111;
+  --color-accent-contrast: #ffffff;
+  --color-heart: #111111;
+  --color-playhead: #111111;
+  --color-progress: #c4a265;
+  --color-progress-track: #dddddd;
+
+  /* Piano roll / grid */
+  --color-grid: #ededed;
+  --color-grid-major: #d8d8d8;
+  --color-roll-bg: #ffffff;
+  --color-workspace-bg: #ffffff;
+  --color-workspace-grid-a: #f5f5f5;
+  --color-workspace-grid-b: #f1f1f1;
+
+  /* Piano keys */
+  --color-piano-white: #ffffff;
+  --color-piano-white-grad-mid: #ffffff;
+  --color-piano-white-grad-end: #f0f0f0;
+  --color-piano-white-active-text: #111111;
+  --color-piano-white-active-a: #d2d2d2;
+  --color-piano-white-active-b: #e8e8e8;
+  --color-piano-white-active-c: #c8c8c8;
+  --color-piano-white-active-shadow: #777777;
+  --color-piano-black-a: #111111;
+  --color-piano-black-b: #292929;
+  --color-piano-black-c: #080808;
+  --color-piano-black-active-a: #666666;
+  --color-piano-black-active-b: #999999;
+  --color-piano-black-active-c: #555555;
+  --color-piano-label: #777777;
+  --color-piano-label-octave: #333333;
+
+  /* Misc */
+  --color-shadow-soft: rgb(0 0 0 / 5%);
+  --color-shadow-panel: rgb(0 0 0 / 3%);
+  --color-shadow-piano: rgb(0 0 0 / 23%);
+  --color-overlay-noise: rgb(0 0 0 / 0%);
+}
+
+:root[data-theme='dark'] {
+  --color-bg: #111111;
+  --color-bg-subtle: #171717;
+  --color-bg-muted: #191919;
+  --color-bg-soft: #202020;
+  --color-bg-elevated: #191919;
+  --color-bg-inverse: #f2f2f2;
+  --color-bg-inverse-hover: #ffffff;
+  --color-bg-keyboard-frame: #292929;
+  --color-bg-disabled: #191919;
+
+  --color-text: #f2f2f2;
+  --color-text-strong: #f5f5f5;
+  --color-text-secondary: #eeeeee;
+  --color-text-muted: #c7c7c7;
+  --color-text-subtle: #bbbbbb;
+  --color-text-faint: #aaaaaa;
+  --color-text-dim: #a5a5a5;
+  --color-text-soft: #aaaaaa;
+  --color-text-placeholder: #888888;
+  --color-text-disabled: #777777;
+  --color-text-inverse: #111111;
+  --color-text-error: #ff9a9a;
+
+  --color-border: #303030;
+  --color-border-soft: #333333;
+  --color-border-muted: #383838;
+  --color-border-strong: #444444;
+  --color-border-mid: #454545;
+  --color-border-key: #555555;
+  --color-border-piano: #999999;
+  --color-border-piano-bottom: #777777;
+  --color-border-key-white: #aaaaaa;
+  --color-border-black: #000000;
+  --color-border-inverse: #f2f2f2;
+  --color-border-focus: #ffffff;
+
+  --color-accent: #f5f5f5;
+  --color-accent-contrast: #111111;
+  --color-heart: #f5f5f5;
+  --color-playhead: #ffffff;
+  --color-progress: #c4a265;
+  --color-progress-track: #444444;
+
+  --color-grid: #252525;
+  --color-grid-major: #353535;
+  --color-roll-bg: #111111;
+  --color-workspace-bg: #111111;
+  --color-workspace-grid-a: #1a1a1a;
+  --color-workspace-grid-b: #1d1d1d;
+
+  --color-piano-white: #ffffff;
+  --color-piano-white-grad-mid: #ffffff;
+  --color-piano-white-grad-end: #f0f0f0;
+  --color-piano-white-active-text: #ffffff;
+  --color-piano-white-active-a: #555555;
+  --color-piano-white-active-b: #333333;
+  --color-piano-white-active-c: #222222;
+  --color-piano-white-active-shadow: #aaaaaa;
+  --color-piano-black-a: #111111;
+  --color-piano-black-b: #292929;
+  --color-piano-black-c: #080808;
+  --color-piano-black-active-a: #dddddd;
+  --color-piano-black-active-b: #ffffff;
+  --color-piano-black-active-c: #bbbbbb;
+  --color-piano-label: #777777;
+  --color-piano-label-octave: #333333;
+
+  --color-shadow-soft: rgb(0 0 0 / 28%);
+  --color-shadow-panel: rgb(0 0 0 / 18%);
+  --color-shadow-piano: rgb(0 0 0 / 23%);
+}
