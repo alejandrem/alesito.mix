@@ -41,8 +41,9 @@ pub fn render_midi_file_to_wav(
                 Ok(Some(s)) => break s,
                 Ok(None) => {
                     if start.elapsed() >= timeout {
-                        // Timeout: matar el proceso
-                        let _ = kill_tree(child.id());
+                        // Timeout: matar el proceso y reapearlo para no dejar huérfanos.
+                        let _ = child.kill();
+                        let _ = child.wait();
                         return Err(format!("fluidsynth supero el timeout de {}s", timeout_secs));
                     }
                     std::thread::sleep(Duration::from_millis(100));
@@ -72,38 +73,39 @@ fn launch_fluidsynth(soundfont: &Path, output: &Path, midi_path: &Path) -> Resul
     Command::new("fluidsynth")
         .args([
             "-ni",
+            "-q",
+            // Calidad de render: 48 kHz, WAV 24-bit.
             "-F",
             output.to_str().ok_or("ruta invalida")?,
+            "-T",
+            "wav",
+            "-O",
+            "s24",
             "-r",
-            "44100",
+            "48000",
             "-g",
             "0.7",
+            // Realismo: reverb (piano en sala) on; chorus off (un piano real no lleva chorus).
+            "-R",
+            "1",
+            "-C",
+            "0",
+            "-o",
+            "synth.reverb.room-size=0.6",
+            "-o",
+            "synth.reverb.level=0.7",
+            "-o",
+            "synth.reverb.width=0.9",
+            "-o",
+            "synth.reverb.damp=0.3",
+            // Cargar todos los samples (sin lazy-loading).
+            "-o",
+            "synth.dynamic-sample-loading=0",
             soundfont.to_str().ok_or("soundfont invalido")?,
             midi_path.to_str().ok_or("midi invalido")?,
         ])
         .spawn()
         .map_err(|e| format!("no se pudo ejecutar fluidsynth: {e}"))
-}
-
-/// Mata un proceso y sus hijos (solo el proceso directo, sin recursión profunda
-/// para evitar complejidad innecesaria en Linux).
-fn kill_tree(pid: u32) {
-    #[cfg(unix)]
-    {
-        // En Linux, kill -9 -PID mata todo el grupo de procesos
-        let _ = Command::new("kill")
-            .arg("-9")
-            .arg(format!("-{pid}"))
-            .spawn()
-            .and_then(|mut c| c.wait());
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = Command::new("taskkill")
-            .args(&["/F", "/T", "/PID", &pid.to_string()])
-            .spawn()
-            .and_then(|mut c| c.wait());
-    }
 }
 
 pub fn default_soundfont() -> PathBuf {
