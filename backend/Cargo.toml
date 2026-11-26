@@ -6,15 +6,17 @@ edition = "2021"
 [dependencies]
 axum = { version = "0.7", features = ["multipart", "ws"] }
 tokio = { version = "1", features = ["full"] }
-tower-http = { version = "0.5", features = ["cors", "trace"] }
+tower-http = { version = "0.5", features = ["cors", "fs", "trace"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 futures = "0.3"
-basic-pitch-transcription = { path = "../../basic-pitch-rs/crates/transcription" }
-basic-pitch-midi-io = { path = "../../basic-pitch-rs/crates/midi-io" }
+# Dependencia externa: https://github.com/alejandrem/basic-pitch-rs
+# Fijar `rev` a un commit/tag estable para builds reproducibles.
+basic-pitch-transcription = { git = "https://github.com/alejandrem/basic-pitch-rs", rev = "938bce7ad06268b86d163b897908d56248ce0fe9" }
+basic-pitch-midi-io = { git = "https://github.com/alejandrem/basic-pitch-rs", rev = "938bce7ad06268b86d163b897908d56248ce0fe9" }
 symphonia = { version = "0.5.5", features = ["wav", "flac", "ogg", "mp3", "aac", "pcm"] }
 
 [dev-dependencies]

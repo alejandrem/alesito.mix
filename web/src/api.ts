@@ -28,7 +28,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export async function submitAudio(file: File, signal: AbortSignal): Promise<string> {
   const response = await request<{ job_id: string }>('/transcribe-audio', {
     method: 'POST',
-    headers: { 'content-type': 'audio/mpeg' },
+    headers: { 'content-type': file.type || 'application/octet-stream' },
     body: file,
     signal,
   })

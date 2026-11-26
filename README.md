@@ -1,271 +1,184 @@
 # alesito.mix
 
-Transcriptor de audio a MIDI interactivo con interfaz gráfica en tiempo real.
-Desarrollado en Python con **PyQt6**, utiliza la red neuronal **basic-pitch** de Spotify
-para convertir grabaciones de audio en secuencias MIDI visualizables y editables.
+Transcriptor de audio a MIDI con visualización tipo piano roll. El proyecto está en transición desde un prototipo de escritorio (Python/PyQt6) hacia una arquitectura web: **backend Rust (Axum)** + **frontend Vue 3 + TypeScript + Vite**.
 
----
+> Estado: **en desarrollo activo**. La dirección principal actual es `backend/` + `web/`. La carpeta `basic-pitch-py/` se conserva como referencia/legacy del prototipo de escritorio.
 
-## Lo que puede hacer ahorita:
+## Qué hace hoy
 
-### Transcripción de Audio → MIDI
-- Sube un archivo de audio (MP3, WAV, OGG, FLAC, M4A)
-- La IA de Spotify (basic-pitch) lo analiza automáticamente
-- Genera un archivo MIDI con las notas detectadas
-- Muestra progreso en tiempo real durante la transcripción
+- **Transcripción audio → notas/MIDI** usando el motor Rust de [`basic-pitch-rs`](https://github.com/alejandrem/basic-pitch-rs).
+- **API backend** para crear jobs de transcripción, consultar estado, obtener notas, descargar MIDI y renderizar audio.
+- **Frontend web** para cargar audio/MIDI, visualizar notas en un piano roll y reproducir audio renderizado.
+- **Render MIDI → WAV** en backend con FluidSynth y SoundFont propia (`backend/assets/TimGM6mb.sf2`).
 
-### Piano Roll Interactivo
-- Visualización tipo Synthesia/Guitar Hero de las notas
-- Notas cayendo de derecha a izquierda con colores por octava
-- Línea de playhead dorada que indica la posición actual
-- Scroll vertical sincronizado con el piano
-- Zoom horizontal y vertical configurable
+## Estructura del repo
 
-### Teclado Piano Vertical
-- 88 teclas de piano (A0 a C8)
-- Se iluminan con el color de la nota cuando suenan
-- Teclas blancas y negras con gradientes elegantes
-- Sincronizado con el motor de reproducción
-
-### Edición de Notas (Ola 4 + 5)
-- **Clic derecho** en una nota → panel de información flotante
-- Editar **dinámica** (ppp a fff) con menú desplegable
-- Editar **figura musical** (redonda a fusa)
-- Editar **pitch** (mover nota a otra tecla)
-- **Botones "Afectar a hermanas"** → aplicar cambios a todas las notas del mismo pitch
-- **Flechas del teclado** → mover notas:
-  - `↑/↓` cambia pitch ±1 semitono
-  - `←/→` mueve en el tiempo ±0.05s
-- **Supr/Retroceso** → eliminar notas
-
-### Reproducción de Audio
-- Motor de reproducción MIDI con FluidSynth
-- SoundFont de piano de cola (FluidR3_GM.sf2)
-- Control de **velocidad** (0.5x a 2.0x)
-- Control de **volumen** (0% a 200%)
-- Botones Play/Pause/Stop
-- **TopBar colapsable** con:
-  - Barra de seek (arrastrar para saltar)
-  - Display de tiempo (0:00 / 3:45)
-  - Botones ±5 segundos
-
-### Interfaz Premium
-- Tema visual de **madera oscura con acentos dorados**
-- Sidebar con controles de transcripción
-- Ajustes avanzados de la IA:
-  - Umbral de onset (sensibilidad de detección)
-  - Umbral de frame (sensibilidad de sostén)
-  - Largo mínimo de nota
-  - Rango de frecuencias (65 Hz a 6000 Hz)
-- **Auto-ajustar** → analiza el audio y configura los umbrales automáticamente
-- Overlay de carga con mensajes animados
-- Tooltips de ayuda en los controles
-
-### Descarga y Re-transcripción
-- **Descargar MIDI** → guarda el archivo transcrito
-- **Aplicar ajustes** → re-transcribe con nuevos parámetros
-- Mantiene la posición de reproducción al re-transcribir
-
----
-
-## Lo que queremos hacer 🔮
-
-### Integración con MuseScore (Próximo paso)
-
-**Estado:** En desarrollo
-
-La idea es agregar un **Dashboard 2** con una interfaz estilo MuseScore 4
-que muestre la partitura musical de la canción transcrita.
+```text
+.
+├── backend/                 # API Rust (Axum, Tokio)
+│   ├── assets/              # SoundFont y licencias para render
+│   └── src/
+│       ├── routes/          # /health, /transcribe, /jobs/:id/*
+│       ├── audio.rs
+│       ├── state.rs
+│       └── main.rs
+├── web/                     # Frontend Vue 3 + TS + Vite
+│   ├── src/
+│   ├── tests/
+│   └── scripts/dev.js       # Levanta web + backend juntos
+├── basic-pitch-py/          # Prototipo desktop PyQt6 (legacy/referencia)
+├── doc/plan-web/            # Plan de migración por fases
+└── README.md
 ```
 
-┌────────────────────────────────────────────────────────
-│ alesito.mix                                          │|
-├──────────────────────────────────────────────────────┤|
-│                                                      │|
-│  ┌──────────────────────────────────────────────────┐│|
-│  │  DASHBOARD 1: alesito.mix (Piano Roll)           ││|
-│  │  Sidebar | Piano Vertical | Piano Roll           ││|
-│  └──────────────────────────────────────────────────┘│|
-│                                                      │|
-│  ┌──────────────────────────────────────────────────┐│|
-│  │  DASHBOARD 2: MuseScore (Partitura)              ││|
-│  │  MenuBar | Tabs | Transport | NoteInput          ││|
-│  │  Palette Panel | Partitura SVG | StatusBar       ││|
-│  └──────────────────────────────────────────────────┘│|
-│                                                      │|
-└────────────────────────────────────────────────────────
-```
+## Requisitos
 
-**Funcionalidades planeadas:**
+### Para la versión web (actual)
 
-| Feature | Descripción |
-|---------|-------------|
-| Renderizado de partitura | Usando `mscore` CLI (MuseScore 4.7.4) |
-| SVG de alta calidad | Generado por el motor de renderizado de MuseScore |
-| Playhead sincronizado | Línea vertical que se mueve con la reproducción |
-| Edición bidireccional | Editar en Piano Roll → se actualiza la partitura |
-| Palette de notación | Claves, Armaduras, Tempo, Dinámicas, etc. |
-| MenuBar funcional | Archivo, Editar, Ver, Añadir, Formato, etc. |
-| Transport controls | Play/Pause/Stop, ±5s, BPM display |
-| Note input toolbar | Redonda, Blanca, Negra, Corchea, accidentales |
-| Loading indicator | "Actualizando partitura..." mientras renderiza |
-| Zoom y scroll | Navegar por la partitura |
+- **Rust** estable (edition 2021, recomendado toolchain reciente).
+- **Node.js** + npm.
+- **FluidSynth** instalado en el sistema (el backend lo usa para renderizar MIDI a WAV).
+- **libsoxr** y `pkg-config` (requerido por `basic-pitch-rs` para remuestreo de alta calidad).
+- **Modelo de Basic Pitch** disponible localmente (`MODEL_DIR`).
 
-**Comando verificado:**
+Dependencias de sistema típicas:
+
 ```bash
-QT_QPA_PLATFORM=offscreen mscore -o partitura.svg input.mid
+# Arch / CachyOS
+sudo pacman -S fluidsynth soxr pkgconf
+
+# Debian / Ubuntu
+sudo apt install fluidsynth libsoxr-dev pkg-config
 ```
 
-# Genera SVG de alta calidad (~10KB por página)
-Edición desde MuseScore (Futuro)
-- Arrastrar notas en la partitura → actualizar Piano Roll
-- Cambiar figuras musicales desde la palette
-- Insertar/armaduras/compás desde la palette
-- Sincronización en tiempo real entre ambos dashboards
+## Quickstart (web + backend)
 
-# Otras mejoras planeadas:
-Feature
-Migrar QThread a multiprocessing
-Exportar a MusicXML
-Soporte multi-instrumento
-Grabación de audio
-Plugins/extensiones
+### En esta PC / setup limpio
 
-
-# Arquitectura 🏗️
-```
-alesito.mix/
-├── frontend/
-│   ├── core/
-│   │   ├── main.py              # Entry point
-│   │   └── app.py               # MainWindow (orquestador)
-│   │
-│   ├── engine/
-│   │   ├── playback_engine.py   # Motor de reproducción (FluidSynth)
-│   │   ├── midi_parser.py       # Parseo de MIDI a NoteEvents
-│   │   └── midi_setup.py        # Configuración de FluidSynth
-│   │
-│   ├── transcription/
-│   │   ├── transcription_worker.py  # Worker de transcripción (QThread)
-│   │   └── audio_analyzer.py        # Análisis automático de audio
-│   │
-│   ├── ui/
-│   │   ├── styles.py            # Paleta de colores y QSS
-│   │   ├── sidebar.py           # Panel lateral con controles
-│   │   ├── piano_roll_view.py   # Piano Roll (notas cayendo)
-│   │   ├── piano_widget.py      # Teclado vertical 88 teclas
-│   │   ├── top_bar.py           # Barra superior colapsable
-│   │   ├── note_info_panel.py   # Panel de info/edición de notas
-│   │   ├── loading_overlay.py   # Overlay de carga
-│   │   └── help_tooltip.py      # Tooltips de ayuda
-│   │
-│   └── FluidR3_GM.sf2          # SoundFont (piano de cola)
-│
-├── basic-pitch-main/           # IA de Spotify (transcripción)
-├── doc/                        # Documentación
-├── scripts/                    # Scripts utilitarios
-└── requirements.txt            # Dependencias de Python
-```
-
-# Flujo de Datos
-```
-┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-│  Audio      │    │  basic-pitch│    │  pretty_midi│
-│  (.mp3)     │───→│  (IA)       │───→│  (MIDI)     │
-└─────────────┘    └─────────────┘    └─────────────┘
-                                              │
-                          ┌───────────────────┼───────────────────┐
-                          ▼                   ▼                   ▼
-                   ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-                   │ Piano Roll  │    │  Playback   │    │  Sidebar    │
-                   │ (visual)    │    │  Engine     │    │  (info)     │
-                   └─────────────┘    └─────────────┘    └─────────────┘
-                          │                   │
-                          ▼                   ▼
-                   ┌─────────────┐    ┌─────────────┐
-                   │ Piano       │    │  TopBar     │
-                   │ Widget      │    │  (timeline) │
-                   └─────────────┘    └─────────────┘
-Arquitectura de Señales (Signal-Slot)
-Sidebar ──upload_clicked──→ app.py ──→ TranscriptionWorker
-                                      ↓
-                              finished(midi_data)
-                                      ↓
-                    ┌─────────────────┼─────────────────┐
-                    ▼                 ▼                 ▼
-              Piano Roll        Playback Engine     Sidebar
-              (load_notes)      (load)              (info)
-                    │                 │
-                    │    position_changed
-                    │                 │
-                    ▼                 ▼
-              on_position_changed  Piano Widget
-                                  (note_on/off)
-```
-# Requisitos 📋
-Sistema
-- Python 3.8+
-- FluidSynth (librería de sistema para audio):
-- Ubuntu/Debian: sudo apt-get install fluidsynth
-- macOS: brew install fluid-synth
-- Arch: sudo pacman -S fluidsynth
-- MuseScore 4.7.4 (opcional, para vista de partitura):
-- Instalar desde https://musescore.org
-
-# Dependencias de Python
-PyQt6              # Interfaz gráfica
-basic-pitch        # IA de Spotify (transcripción)
-pretty_midi        # Manejo de archivos MIDI
-pyfluidsynth       # Sintetizador de audio
-librosa            # Análisis de audio
-scipy              # Procesamiento de señales
-numpy              # Cálculos numéricos
-onnxruntime        # Ejecución de modelos de IA
-
-# Cómo Ejecutar 
-```
-Linux / macOS:
+```bash
+# 1) Clona el repo (en otra PC)
+git clone https://github.com/alejandrem/alesito.mix.git
 cd alesito.mix
-./frontend/run.sh
-```
-```
-Windows:
-cd alesito.mix
-frontend\run.bat
+
+# 2) Instala dependencias del frontend
+cd web && npm install && cd ..
+
+# 3) Descarga el modelo desde GitHub Releases (una vez)
+./backend/scripts/update-model.sh
+
+# 4) Levanta web + backend
+cd web && npm run dev
 ```
 
+> No necesitas tener `basic-pitch-rs` clonado localmente: el código Rust de los crates se descarga desde GitHub por Cargo (`git + rev` en `backend/Cargo.toml`), y los pesos del modelo se descargan desde Releases con el script.
+
+`npm run dev` levanta Vite y el backend Rust (`cargo run --release`) juntos. Vite proxyea `/api` a `http://127.0.0.1:3000`.
+
+Comandos útiles:
+
+```bash
+# Actualizar modelo a la última release
+./backend/scripts/update-model.sh
+
+# Actualizar modelo a una release específica
+./backend/scripts/update-model.sh v0.1.0
+
+# Solo frontend
+cd web && npm run dev:web
+
+# Solo backend
+cd backend && cargo run --release
+
+# Tests web
+cd web && npm test
+
+# Build web
+cd web && npm run build
 ```
-Manual (sin scripts):
-cd alesito.mix
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-cd frontend
-python -m core.main
+
+## Configuración del backend
+
+Variables de entorno relevantes:
+
+| Variable | Default | Descripción |
+| --- | --- | --- |
+| `MODEL_DIR` | `./models/basic-pitch/icassp-2022` | Ruta al modelo `icassp-2022` de basic-pitch-rs |
+| `TEMP_DIR` | `./tmp` | Directorio temporal para audio/MIDI/WAV |
+| `SOUNDFONT_PATH` | `backend/assets/TimGM6mb.sf2` | SoundFont para render MIDI |
+| `MAX_JOBS` | `50` | Máximo de jobs activos en memoria |
+| `MAX_AUDIO_SIZE_MB` | `100` | Tamaño máximo de audio |
+| `MAX_AUDIO_DURATION_SECS` | `720` | Duración máxima de audio (12 min) |
+| `FLUIDSYNTH_TIMEOUT_SECS` | `120` | Timeout de render |
+| `WEB_DIST_DIR` | `../web/dist` | Si existe `index.html` ahí, el backend sirve el frontend en el mismo puerto |
+
+## Dependencia clave: `basic-pitch-rs`
+
+El backend depende de crates del repo hermano [`alejandrem/basic-pitch-rs`](https://github.com/alejandrem/basic-pitch-rs):
+
+- `basic-pitch-transcription`
+- `basic-pitch-midi-io`
+
+### Estado actual (recomendado)
+
+En `backend/Cargo.toml` estas dependencias están configuradas como **dependencias git fijadas por `rev`** para que el build sea reproducible al clonar este repo.
+
+```toml
+basic-pitch-transcription = { git = "https://github.com/alejandrem/basic-pitch-rs", rev = "..." }
+basic-pitch-midi-io = { git = "https://github.com/alejandrem/basic-pitch-rs", rev = "..." }
 ```
-# Paleta de Colores 
 
-Color	Hex
-Fondo más oscuro	#0D0D0D
-Fondo oscuro	#1A1A1A
-Fondo medio	#2A2A2A
-Madera oscura	#120E0A
-Madera media	#3C2A1A
-Madera clara	#5C4033
-Borde madera	#6B5B45
-Dorado tenue	#7A6A4F
-Dorado	#C4A265
-Dorado brillante	#D4B878
-Texto primario	#E8DFD0
-Texto secundario	#A09080
-Texto tenue	#6B5B45
+### Modelo (runtime): se actualiza desde Releases
 
+Los pesos del modelo **no** necesitan el código fuente de `basic-pitch-rs`; se descargan desde los **GitHub Releases** del repo. Esto separa bien las dos cosas:
 
-# Documentación 📚
+- **Código Rust** (crates de inferencia): dependencia git en `backend/Cargo.toml`. Cargo lo compila desde fuente.
+- **Pesos del modelo** (`.safetensors`, config, checksums): artefactos de runtime descargados desde Releases.
 
-- doc/alesito.md 🎹/arquitectura_alesito.md — Arquitectura completa
-- doc/alesito.md 🎹/comandos.md — Comandos de instalación
-- doc/bugs resueltos 👻/ — Historial de bugs
-- doc/mejoras uwu/ — Planes de implementación
-- doc/top_bar_plan.md — Plan de la TopBar
-- unificacion.md — Plan de integración MuseScore
+Descargar/actualizar modelo (un comando):
+
+```bash
+# Última release
+./backend/scripts/update-model.sh
+
+# Release específica
+./backend/scripts/update-model.sh v0.1.0
+```
+
+El script descarga los assets (`cqt_kernels.safetensors`, `model.safetensors`, `model_config.json`, `SHA256SUMS`, `source_metadata.json`), verifica `sha256sum` y los instala en `backend/models/basic-pitch/icassp-2022/`. Esa carpeta está ignorada por git.
+
+### Actualizar el código de la red neuronal (crates Rust)
+
+Cuando actualices los crates en `basic-pitch-rs`, en este repo solo hace falta actualizar la dependencia:
+
+```bash
+cd backend
+cargo update -p basic-pitch-transcription -p basic-pitch-midi-io
+cargo build --release
+```
+
+Si prefieres fijar una versión exacta, cambia el `rev` (o usa `tag = "vX.Y.Z"`) en `backend/Cargo.toml`. Para seguir la rama principal automáticamente (menos reproducible, pero más cómodo en desarrollo) puedes usar `branch = "master"`, pero yo recomiendo mantener `rev/tag` y actualizar con `cargo update` cuando quieras.
+
+## API backend (resumen)
+
+- `GET /health`
+- `POST /transcribe` (multipart audio)
+- `POST /transcribe-audio`
+- `POST /render-midi`
+- `GET /jobs/:id`
+- `GET /jobs/:id/notes`
+- `GET /jobs/:id/midi`
+- `GET /jobs/:id/audio`
+
+## Legacy: prototipo desktop Python
+
+La carpeta `basic-pitch-py/` contiene el prototipo original con PyQt6 + basic-pitch (Python) + FluidSynth. Se mantiene como referencia histórica y para comparar comportamiento, pero **no es la ruta principal de desarrollo**.
+
+Si quieres explorarlo, revisa su código y documentación interna en `basic-pitch-py/alesito.md 🎹/` antes de ejecutarlo; el README anterior de raíz estaba centrado en esa versión y quedó desactualizado.
+
+## Plan de migración
+
+La hoja de ruta web está en [`doc/plan-web/`](doc/plan-web/), con fases desde auditoría hasta despliegue/Tauri.
+
+## Licencia
+
+Ver [LICENSE](LICENSE).

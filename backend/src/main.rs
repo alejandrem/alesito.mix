@@ -11,6 +11,7 @@ use axum::routing::{get, post};
 use axum::Router;
 use basic_pitch_transcription::Transcriber;
 use tower_http::cors::CorsLayer;
+use tower_http::services::{ServeDir, ServeFile};
 use tracing_subscriber::EnvFilter;
 use uuid::Uuid;
 
@@ -35,7 +36,7 @@ async fn main() {
         .init();
 
     let model_dir = std::env::var("MODEL_DIR")
-        .unwrap_or_else(|_| "../../basic-pitch-rs/models/basic-pitch/icassp-2022".to_string());
+        .unwrap_or_else(|_| "./models/basic-pitch/icassp-2022".to_string());
     let temp_dir = PathBuf::from(std::env::var("TEMP_DIR").unwrap_or_else(|_| "./tmp".to_string()));
     std::fs::create_dir_all(&temp_dir).expect("no se pudo crear el directorio temporal");
 
@@ -74,7 +75,20 @@ async fn main() {
         }
     });
 
-    let app = Router::new()
+    let web_dist_dir = std::env::var("WEB_DIST_DIR")
+        .unwrap_or_else(|_| "../web/dist".to_string());
+    let web_dist_path = std::path::PathBuf::from(&web_dist_dir);
+    let serve_frontend = web_dist_path.join("index.html").is_file();
+    if serve_frontend {
+        tracing::info!("sirviendo frontend desde {}", web_dist_path.display());
+    } else {
+        tracing::info!(
+            "frontend estático no encontrado en {} (solo API). Ejecuta `npm run build` en web/ para habilitarlo.",
+            web_dist_path.display()
+        );
+    }
+
+    let mut app = Router::new()
         .route("/health", get(health))
         .route(
             "/transcribe",
@@ -89,6 +103,11 @@ async fn main() {
         .route("/jobs/:id/audio", get(get_audio))
         .layer(CorsLayer::permissive())
         .with_state(state);
+
+    if serve_frontend {
+        let index = web_dist_path.join("index.html");
+        app = app.fallback_service(ServeDir::new(&web_dist_path).not_found_service(ServeFile::new(index)));
+    }
 
     let addr: SocketAddr = "0.0.0.0:3000".parse().unwrap();
     let listener = match tokio::net::TcpListener::bind(addr).await {

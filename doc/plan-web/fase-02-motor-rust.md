@@ -8,12 +8,17 @@ validar la paridad con el escritorio.
 Opción A (desarrollo): path local.
 
 ```toml
-basic-pitch-transcription = { path = "../../basic-pitch-rs/crates/transcription" }
+basic-pitch-transcription = { git = "https://github.com/alejandrem/basic-pitch-rs", rev = "<commit>" }
+# opcionalmente: tag = "vX.Y.Z"
 ```
 
-Opción B (producción): git + tag.
+> Estado actual en `alesito.mix`: se usa dependencia git fijada por `rev` en `backend/Cargo.toml` para builds reproducibles.
+
+Opción alternativa (desarrollo local cruzado): path.
 
 ```toml
+# basic-pitch-transcription = { path = "../../basic-pitch-rs/crates/transcription" }
+```
 basic-pitch-transcription = { git = "https://github.com/alejandrem/basic-pitch-rs", tag = "v0.1.0" }
 ```
 
