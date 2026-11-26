@@ -106,7 +106,7 @@ function drawPianoRoll() {
     const top = bottom - noteHeight
     if (bottom < 0 || top > height) continue
 
-    const noteWidth = whiteKeyWidth * (key.isBlack ? 0.58 : 0.8)
+    const noteWidth = whiteKeyWidth * (key.isBlack ? 0.25 : 0.65)
     const x = key.center * width - noteWidth / 2
     const y = Math.max(-noteHeight, top)
     const visibleHeight = Math.min(height - y, noteHeight)
@@ -115,10 +115,13 @@ function drawPianoRoll() {
     context.fillStyle = dark
       ? `rgba(245, 245, 245, ${velocityOpacity})`
       : `rgba(17, 17, 17, ${velocityOpacity})`
-    context.fillRect(x, y, noteWidth, visibleHeight)
+    const cornerRadius = Math.min(4, noteWidth / 2, visibleHeight / 2)
+    context.beginPath()
+    context.roundRect(x, y, noteWidth, visibleHeight, cornerRadius)
+    context.fill()
     context.strokeStyle = dark ? '#ffffff' : '#000000'
     context.lineWidth = 1
-    context.strokeRect(x + 0.5, y + 0.5, Math.max(1, noteWidth - 1), Math.max(1, visibleHeight - 1))
+    context.stroke()
   }
 
   const playheadY = height
