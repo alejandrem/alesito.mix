@@ -1,6 +1,6 @@
 use axum::body::Body;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{Multipart, Path, State};
+use axum::extract::{Multipart, Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::Json;
@@ -11,9 +11,13 @@ use uuid::Uuid;
 use crate::error::{AppError, AppResult};
 use crate::state::{AppState, Job, JobStatus, ProgressEvent};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 struct TranscriptionOptions {
+    onset_threshold: f64,
     frame_threshold: f64,
+    minimum_note_length_ms: f64,
+    min_freq: Option<f64>,
+    max_freq: Option<f64>,
     melodia_trick: bool,
     midi_tempo: f64,
     multiple_pitch_bends: bool,
@@ -22,11 +26,41 @@ struct TranscriptionOptions {
 impl Default for TranscriptionOptions {
     fn default() -> Self {
         Self {
+            onset_threshold: 0.5,
             frame_threshold: 0.3,
+            minimum_note_length_ms: 127.7,
+            min_freq: None,
+            max_freq: None,
             melodia_trick: true,
             midi_tempo: 120.0,
             multiple_pitch_bends: false,
         }
+    }
+}
+
+#[derive(Debug, Default, serde::Deserialize)]
+pub struct TranscriptionQuery {
+    pub onset_threshold: Option<f64>,
+    pub frame_threshold: Option<f64>,
+    pub minimum_note_length_ms: Option<f64>,
+    pub min_freq: Option<f64>,
+    pub max_freq: Option<f64>,
+    pub melodia_trick: Option<String>,
+    pub midi_tempo: Option<f64>,
+    pub multiple_pitch_bends: Option<String>,
+}
+
+impl TranscriptionQuery {
+    fn apply(self, mut opts: TranscriptionOptions) -> TranscriptionOptions {
+        if let Some(v) = self.onset_threshold { opts.onset_threshold = v; }
+        if let Some(v) = self.frame_threshold { opts.frame_threshold = v; }
+        if let Some(v) = self.minimum_note_length_ms { opts.minimum_note_length_ms = v; }
+        if let Some(v) = self.min_freq { opts.min_freq = Some(v); }
+        if let Some(v) = self.max_freq { opts.max_freq = Some(v); }
+        if let Some(v) = self.melodia_trick { opts.melodia_trick = v == "true" || v == "1"; }
+        if let Some(v) = self.midi_tempo { opts.midi_tempo = v; }
+        if let Some(v) = self.multiple_pitch_bends { opts.multiple_pitch_bends = v == "true" || v == "1"; }
+        opts
     }
 }
 
@@ -178,36 +212,38 @@ pub async fn create_transcription(
                 }
                 audio_path = Some(path);
             }
+            Some("onset_threshold") => {
+                let v = field.text().await.map_err(|e| AppError::BadRequest(e.to_string()))?;
+                options.onset_threshold = v.parse().map_err(|_| AppError::BadRequest("onset_threshold invalido".into()))?;
+            }
             Some("frame_threshold") => {
-                let v = field
-                    .text()
-                    .await
-                    .map_err(|e| AppError::BadRequest(e.to_string()))?;
-                options.frame_threshold = v
-                    .parse()
-                    .map_err(|_| AppError::BadRequest("frame_threshold invalido".into()))?;
+                let v = field.text().await.map_err(|e| AppError::BadRequest(e.to_string()))?;
+                options.frame_threshold = v.parse().map_err(|_| AppError::BadRequest("frame_threshold invalido".into()))?;
+            }
+            Some("minimum_note_length_ms") => {
+                let v = field.text().await.map_err(|e| AppError::BadRequest(e.to_string()))?;
+                options.minimum_note_length_ms = v.parse().map_err(|_| AppError::BadRequest("minimum_note_length_ms invalido".into()))?;
+            }
+            Some("min_freq") => {
+                let v = field.text().await.map_err(|e| AppError::BadRequest(e.to_string()))?;
+                let parsed: f64 = v.parse().map_err(|_| AppError::BadRequest("min_freq invalido".into()))?;
+                options.min_freq = Some(parsed);
+            }
+            Some("max_freq") => {
+                let v = field.text().await.map_err(|e| AppError::BadRequest(e.to_string()))?;
+                let parsed: f64 = v.parse().map_err(|_| AppError::BadRequest("max_freq invalido".into()))?;
+                options.max_freq = Some(parsed);
             }
             Some("melodia_trick") => {
-                let v = field
-                    .text()
-                    .await
-                    .map_err(|e| AppError::BadRequest(e.to_string()))?;
+                let v = field.text().await.map_err(|e| AppError::BadRequest(e.to_string()))?;
                 options.melodia_trick = v == "true" || v == "1";
             }
             Some("midi_tempo") => {
-                let v = field
-                    .text()
-                    .await
-                    .map_err(|e| AppError::BadRequest(e.to_string()))?;
-                options.midi_tempo = v
-                    .parse()
-                    .map_err(|_| AppError::BadRequest("midi_tempo invalido".into()))?;
+                let v = field.text().await.map_err(|e| AppError::BadRequest(e.to_string()))?;
+                options.midi_tempo = v.parse().map_err(|_| AppError::BadRequest("midi_tempo invalido".into()))?;
             }
             Some("multiple_pitch_bends") => {
-                let v = field
-                    .text()
-                    .await
-                    .map_err(|e| AppError::BadRequest(e.to_string()))?;
+                let v = field.text().await.map_err(|e| AppError::BadRequest(e.to_string()))?;
                 options.multiple_pitch_bends = v == "true" || v == "1";
             }
             _ => {}
@@ -222,6 +258,7 @@ pub async fn create_transcription(
 
 pub async fn create_transcription_audio(
     State(state): State<AppState>,
+    Query(query): Query<TranscriptionQuery>,
     body: Body,
 ) -> AppResult<Json<serde_json::Value>> {
     ensure_job_capacity(&state).await?;
@@ -267,7 +304,8 @@ pub async fn create_transcription_audio(
         "audio recibido"
     );
 
-    start_transcription(state, job_id, audio_path, TranscriptionOptions::default()).await
+    let options = query.apply(TranscriptionOptions::default());
+    start_transcription(state, job_id, audio_path, options).await
 }
 
 async fn start_transcription(
@@ -276,11 +314,26 @@ async fn start_transcription(
     audio_path: std::path::PathBuf,
     options: TranscriptionOptions,
 ) -> AppResult<Json<serde_json::Value>> {
+    if !(0.0..=1.0).contains(&options.onset_threshold) {
+        let _ = tokio::fs::remove_file(&audio_path).await;
+        return Err(AppError::BadRequest("onset_threshold fuera de rango (0.0-1.0)".into()));
+    }
     if !(0.0..=1.0).contains(&options.frame_threshold) {
         let _ = tokio::fs::remove_file(&audio_path).await;
-        return Err(AppError::BadRequest(
-            "frame_threshold fuera de rango".into(),
-        ));
+        return Err(AppError::BadRequest("frame_threshold fuera de rango (0.0-1.0)".into()));
+    }
+    if !options.minimum_note_length_ms.is_finite() || options.minimum_note_length_ms <= 0.0 || options.minimum_note_length_ms > 2000.0 {
+        let _ = tokio::fs::remove_file(&audio_path).await;
+        return Err(AppError::BadRequest("minimum_note_length_ms fuera de rango (0-2000)".into()));
+    }
+    if let Some(min_freq) = options.min_freq {
+        if !min_freq.is_finite() || min_freq <= 0.0 { let _ = tokio::fs::remove_file(&audio_path).await; return Err(AppError::BadRequest("min_freq invalido".into())); }
+    }
+    if let Some(max_freq) = options.max_freq {
+        if !max_freq.is_finite() || max_freq <= 0.0 { let _ = tokio::fs::remove_file(&audio_path).await; return Err(AppError::BadRequest("max_freq invalido".into())); }
+    }
+    if let (Some(min_freq), Some(max_freq)) = (options.min_freq, options.max_freq) {
+        if min_freq >= max_freq { let _ = tokio::fs::remove_file(&audio_path).await; return Err(AppError::BadRequest("min_freq debe ser menor que max_freq".into())); }
     }
     if !options.midi_tempo.is_finite() || options.midi_tempo <= 0.0 {
         let _ = tokio::fs::remove_file(&audio_path).await;
@@ -350,7 +403,11 @@ async fn start_transcription(
         }
 
         let mut transcriber = (*state_clone.transcriber).clone();
+        transcriber.config.note_detection.onset_threshold = options.onset_threshold;
         transcriber.config.note_detection.frame_threshold = options.frame_threshold;
+        transcriber.config.note_detection.minimum_note_length_ms = options.minimum_note_length_ms;
+        transcriber.config.note_detection.min_freq = options.min_freq;
+        transcriber.config.note_detection.max_freq = options.max_freq;
         transcriber.config.note_detection.melodia_trick = options.melodia_trick;
         transcriber.config.midi_tempo = options.midi_tempo;
         transcriber.config.multiple_pitch_bends = options.multiple_pitch_bends;
@@ -428,6 +485,97 @@ async fn start_transcription(
         }
     });
 
+    Ok(Json(json!({ "job_id": job_id })))
+}
+
+pub async fn retranscribe_job(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Query(query): Query<TranscriptionQuery>,
+) -> AppResult<Json<serde_json::Value>> {
+    ensure_job_capacity(&state).await?;
+    let (audio_path, prev_rendered) = {
+        let jobs = state.jobs.read().await;
+        let job = jobs.get(&id).ok_or_else(|| AppError::NotFound("job no encontrado".into()))?;
+        if matches!(job.status, JobStatus::Queued | JobStatus::Running) {
+            return Err(AppError::BadRequest("el job ya está en ejecución".into()));
+        }
+        let audio = job.audio_path.clone().ok_or_else(|| AppError::BadRequest("el audio original ya no está disponible; vuelve a subir el archivo".into()))?;
+        (audio, job.rendered_audio.clone())
+    };
+    if let Some(p) = prev_rendered { let _ = tokio::fs::remove_file(p).await; }
+
+    // Reset job state and re-run with new options
+    let (progress_tx, _) = tokio::sync::broadcast::channel(16);
+    let _ = progress_tx.send(ProgressEvent::stage("queued", 0));
+    {
+        let mut jobs = state.jobs.write().await;
+        if let Some(job) = jobs.get_mut(&id) {
+            job.status = JobStatus::Queued;
+            job.result = None;
+            job.error = None;
+            job.rendered_audio = None;
+            job.progress_tx = progress_tx.clone();
+        }
+    }
+    let options = query.apply(TranscriptionOptions::default());
+    // Reuse start_transcription logic by spawning directly; easier to call a helper.
+    // We'll inline: create a new job id? No, keep same id for simplicity.
+    start_transcription_existing(state, id, audio_path, options, progress_tx).await
+}
+
+async fn start_transcription_existing(
+    state: AppState,
+    job_id: Uuid,
+    audio_path: std::path::PathBuf,
+    options: TranscriptionOptions,
+    progress_tx: tokio::sync::broadcast::Sender<ProgressEvent>,
+) -> AppResult<Json<serde_json::Value>> {
+    // validate
+    if !(0.0..=1.0).contains(&options.onset_threshold) { return Err(AppError::BadRequest("onset_threshold fuera de rango (0.0-1.0)".into())); }
+    if !(0.0..=1.0).contains(&options.frame_threshold) { return Err(AppError::BadRequest("frame_threshold fuera de rango (0.0-1.0)".into())); }
+    if !options.minimum_note_length_ms.is_finite() || options.minimum_note_length_ms <= 0.0 || options.minimum_note_length_ms > 2000.0 { return Err(AppError::BadRequest("minimum_note_length_ms fuera de rango (0-2000)".into())); }
+    if let (Some(min_f), Some(max_f)) = (options.min_freq, options.max_freq) { if min_f >= max_f { return Err(AppError::BadRequest("min_freq debe ser menor que max_freq".into())); } }
+    if !options.midi_tempo.is_finite() || options.midi_tempo <= 0.0 { return Err(AppError::BadRequest("midi_tempo invalido".into())); }
+
+    let state_clone = state.clone();
+    let timeout_secs = state.config.fluidsynth_timeout_secs;
+    let progress_tx_task = progress_tx.clone();
+    tokio::spawn(async move {
+        {
+            let mut jobs = state_clone.jobs.write().await;
+            if let Some(job) = jobs.get_mut(&job_id) { job.status = JobStatus::Running; let _ = job.progress_tx.send(ProgressEvent::stage("transcribing", 10)); }
+        }
+        let mut transcriber = (*state_clone.transcriber).clone();
+        transcriber.config.note_detection.onset_threshold = options.onset_threshold;
+        transcriber.config.note_detection.frame_threshold = options.frame_threshold;
+        transcriber.config.note_detection.minimum_note_length_ms = options.minimum_note_length_ms;
+        transcriber.config.note_detection.min_freq = options.min_freq;
+        transcriber.config.note_detection.max_freq = options.max_freq;
+        transcriber.config.note_detection.melodia_trick = options.melodia_trick;
+        transcriber.config.midi_tempo = options.midi_tempo;
+        transcriber.config.multiple_pitch_bends = options.multiple_pitch_bends;
+
+        let path = audio_path.clone();
+        let outcome = tokio::task::spawn_blocking(move || transcriber.transcribe(&path)).await;
+        let mut jobs = state_clone.jobs.write().await;
+        if let Some(job) = jobs.get_mut(&job_id) {
+            match outcome {
+                Ok(Ok(result)) => {
+                    let wav_path = state_clone.temp_dir.join(format!("{job_id}.wav"));
+                    match crate::audio::render_midi_to_wav(&result.midi_data, &state_clone.soundfont, &wav_path, timeout_secs) {
+                        Ok(()) => { job.rendered_audio = Some(wav_path); }
+                        Err(error) => { let _ = std::fs::remove_file(&wav_path); job.error = Some(format!("transcripción lista; audio no disponible: {error}")); }
+                    }
+                    let notes = result.notes.len(); let duration = result.duration_seconds;
+                    job.result = Some(result); job.status = JobStatus::Done;
+                    let _ = progress_tx_task.send(ProgressEvent::Done { notes, duration });
+                }
+                Ok(Err(error)) => { let message = error.to_string(); let _ = progress_tx_task.send(ProgressEvent::Error { message: message.clone() }); job.status = JobStatus::Failed; job.error = Some(message); }
+                Err(error) => { let message = format!("tarea cancelada: {error}"); let _ = progress_tx_task.send(ProgressEvent::Error { message: message.clone() }); job.status = JobStatus::Failed; job.error = Some(message); }
+            }
+        }
+    });
     Ok(Json(json!({ "job_id": job_id })))
 }
 

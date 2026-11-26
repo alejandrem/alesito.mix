@@ -18,7 +18,7 @@ use uuid::Uuid;
 use crate::routes::audio::render_midi;
 use crate::routes::health::health;
 use crate::routes::transcribe::{
-    create_transcription, create_transcription_audio, get_audio, get_job, get_midi, get_notes, ws_job,
+    create_transcription, create_transcription_audio, get_audio, get_job, get_midi, get_notes, retranscribe_job, ws_job,
 };
 use crate::state::AppState;
 
@@ -101,6 +101,7 @@ async fn main() {
         .route("/jobs/:id/notes", get(get_notes))
         .route("/jobs/:id/midi", get(get_midi))
         .route("/jobs/:id/audio", get(get_audio))
+        .route("/jobs/:id/retranscribe", post(retranscribe_job))
         .route("/ws/:id", get(ws_job))
         .layer(CorsLayer::permissive())
         .with_state(state);
