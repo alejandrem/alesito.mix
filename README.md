@@ -2,7 +2,7 @@
 
 Transcriptor de audio a MIDI con visualización tipo piano roll. El proyecto está en transición desde un prototipo de escritorio (Python/PyQt6) hacia una arquitectura web: **backend Rust (Axum)** + **frontend Vue 3 + TypeScript + Vite**.
 
-> Estado: **en desarrollo activo**. La dirección principal actual es `backend/` + `web/`. La carpeta `basic-pitch-py/` se conserva como referencia/legacy del prototipo de escritorio.
+> Estado: **en desarrollo activo**. La dirección principal actual es `backend/` + `web/`. La carpeta `basic-pitch-py/` es **legacy congelado**: se conserva solo como referencia del prototipo de escritorio y no recibirá nuevas funciones.
 
 ## Qué hace hoy
 
@@ -169,9 +169,9 @@ Si prefieres fijar una versión exacta, cambia el `rev` (o usa `tag = "vX.Y.Z"`)
 - `GET /jobs/:id/midi`
 - `GET /jobs/:id/audio`
 
-## Legacy: prototipo desktop Python
+## Legacy: prototipo desktop Python (congelado)
 
-La carpeta `basic-pitch-py/` contiene el prototipo original con PyQt6 + basic-pitch (Python) + FluidSynth. Se mantiene como referencia histórica y para comparar comportamiento, pero **no es la ruta principal de desarrollo**.
+La carpeta `basic-pitch-py/` contiene el prototipo original con PyQt6 + basic-pitch (Python) + FluidSynth. Está **congelada**: se mantiene como referencia histórica para comparar comportamiento, pero **no es la ruta principal de desarrollo** y no se planean nuevas funciones ahí.
 
 Si quieres explorarlo, revisa su código y documentación interna en `basic-pitch-py/alesito.md 🎹/` antes de ejecutarlo; el README anterior de raíz estaba centrado en esa versión y quedó desactualizado.
 
