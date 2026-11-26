@@ -178,20 +178,16 @@ pub async fn create_transcription(
                     let wav_path = state_clone.temp_dir.join(format!("{job_id}.wav"));
                     match crate::audio::render_midi_to_wav(&result.midi_data, &state_clone.soundfont, &wav_path, timeout_secs) {
                         Ok(()) => {
-                            job.result = Some(result);
                             job.rendered_audio = Some(wav_path);
-                            job.status = JobStatus::Done;
                         }
                         Err(e) => {
-                            // Borrar archivos temporales al fallar.
-                            job.status = JobStatus::Failed;
-                            job.error = Some(format!("render audio: {e}"));
-                            cleanup_job_files(job);
-                            // Limpiar los campos para que el cleanup no intente borrar de nuevo.
-                            job.audio_path = None;
-                            job.rendered_audio = None;
+                            // La transcripción sigue siendo útil aunque no se pueda generar el WAV.
+                            let _ = std::fs::remove_file(&wav_path);
+                            job.error = Some(format!("transcripción lista; audio no disponible: {e}"));
                         }
                     }
+                    job.result = Some(result);
+                    job.status = JobStatus::Done;
                 }
                 Ok(Err(e)) => {
                     // Borrar archivos temporales al fallar la transcripción.

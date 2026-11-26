@@ -8,15 +8,14 @@ use std::path::PathBuf;
 
 use axum::routing::{get, post};
 use axum::Router;
-use uuid::Uuid;
 use basic_pitch_transcription::Transcriber;
 use tower_http::cors::CorsLayer;
 use tracing_subscriber::EnvFilter;
+use uuid::Uuid;
 
+use crate::routes::audio::render_midi;
 use crate::routes::health::health;
-use crate::routes::transcribe::{
-    create_transcription, get_audio, get_job, get_midi, get_notes,
-};
+use crate::routes::transcribe::{create_transcription, get_audio, get_job, get_midi, get_notes};
 use crate::state::AppState;
 
 #[tokio::main]
@@ -30,8 +29,8 @@ async fn main() {
     let temp_dir = PathBuf::from(std::env::var("TEMP_DIR").unwrap_or_else(|_| "./tmp".to_string()));
     std::fs::create_dir_all(&temp_dir).expect("no se pudo crear el directorio temporal");
 
-    let transcriber = Transcriber::load(std::path::Path::new(&model_dir))
-        .expect("no se pudo cargar el modelo");
+    let transcriber =
+        Transcriber::load(std::path::Path::new(&model_dir)).expect("no se pudo cargar el modelo");
 
     let soundfont = crate::audio::default_soundfont();
     let state = AppState::new(transcriber, temp_dir.clone(), soundfont);
@@ -68,6 +67,7 @@ async fn main() {
     let app = Router::new()
         .route("/health", get(health))
         .route("/transcribe", post(create_transcription))
+        .route("/render-midi", post(render_midi))
         .route("/jobs/:id", get(get_job))
         .route("/jobs/:id/notes", get(get_notes))
         .route("/jobs/:id/midi", get(get_midi))

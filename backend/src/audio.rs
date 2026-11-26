@@ -12,39 +12,60 @@ pub fn render_midi_to_wav(
     let midi_path = output.with_extension("mid");
     std::fs::write(&midi_path, midi).map_err(|e| e.to_string())?;
 
-    let mut child = launch_fluidsynth(soundfont, output, &midi_path)?;
-    let timeout = Duration::from_secs(timeout_secs);
-
-    // Esperar al proceso con timeout
-    let start = std::time::Instant::now();
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(s)) => break s,
-            Ok(None) => {
-                if start.elapsed() >= timeout {
-                    // Timeout: matar el proceso
-                    let _ = kill_tree(child.id());
-                    return Err(format!(
-                        "fluidsynth supero el timeout de {}s",
-                        timeout_secs
-                    ));
-                }
-                std::thread::sleep(Duration::from_millis(100));
-            }
-            Err(e) => {
-                return Err(format!("error esperando fluidsynth: {e}"));
-            }
-        }
-    };
-
+    let result = render_midi_file_to_wav(&midi_path, soundfont, output, timeout_secs);
     let _ = std::fs::remove_file(&midi_path);
-    if !status.success() {
-        return Err(format!("fluidsynth fallo con codigo {:?}", status.code()));
+    result
+}
+
+pub fn render_midi_file_to_wav(
+    midi_path: &Path,
+    soundfont: &Path,
+    output: &Path,
+    timeout_secs: u64,
+) -> Result<(), String> {
+    if !soundfont.is_file() {
+        return Err(format!(
+            "SoundFont no encontrado: {}. Configura SOUNDFONT_PATH para indicar otro.",
+            soundfont.display()
+        ));
     }
-    if !output.exists() {
-        return Err("fluidsynth no genero el WAV".into());
+
+    let result = (|| {
+        let mut child = launch_fluidsynth(soundfont, output, midi_path)?;
+        let timeout = Duration::from_secs(timeout_secs);
+
+        // Esperar al proceso con timeout
+        let start = std::time::Instant::now();
+        let status = loop {
+            match child.try_wait() {
+                Ok(Some(s)) => break s,
+                Ok(None) => {
+                    if start.elapsed() >= timeout {
+                        // Timeout: matar el proceso
+                        let _ = kill_tree(child.id());
+                        return Err(format!("fluidsynth supero el timeout de {}s", timeout_secs));
+                    }
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+                Err(e) => {
+                    return Err(format!("error esperando fluidsynth: {e}"));
+                }
+            }
+        };
+
+        if !status.success() {
+            return Err(format!("fluidsynth fallo con codigo {:?}", status.code()));
+        }
+        if !output.exists() {
+            return Err("fluidsynth no genero el WAV".into());
+        }
+        Ok(())
+    })();
+
+    if result.is_err() {
+        let _ = std::fs::remove_file(output);
     }
-    Ok(())
+    result
 }
 
 fn launch_fluidsynth(soundfont: &Path, output: &Path, midi_path: &Path) -> Result<Child, String> {
@@ -86,7 +107,43 @@ fn kill_tree(pid: u32) {
 }
 
 pub fn default_soundfont() -> PathBuf {
-    std::env::var("SOUNDFONT_PATH")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("../frontend/FluidR3_GM.sf2"))
+    if let Ok(path) = std::env::var("SOUNDFONT_PATH") {
+        return PathBuf::from(path);
+    }
+
+    let frontend_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../frontend");
+    [
+        frontend_dir.join("TimGM6mb.sf2"),
+        frontend_dir.join("FluidR3_GM.sf2"),
+        PathBuf::from("/usr/share/sounds/sf2/TimGM6mb.sf2"),
+        PathBuf::from("/usr/share/sounds/sf2/FluidR3_GM.sf2"),
+        PathBuf::from("/usr/share/sounds/sf2/default-GM.sf2"),
+    ]
+    .into_iter()
+    .find(|path| path.is_file())
+    .unwrap_or_else(|| frontend_dir.join("TimGM6mb.sf2"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{default_soundfont, render_midi_to_wav};
+
+    #[test]
+    fn renders_a_midi_file_to_wav_with_the_bundled_soundfont() {
+        let midi = [
+            b'M', b'T', b'h', b'd', 0, 0, 0, 6, 0, 0, 0, 1, 1, 0xE0, b'M', b'T', b'r', b'k', 0, 0,
+            0, 13, 0, 0x90, 60, 100, 0x83, 0x60, 0x80, 60, 0, 0, 0xFF, 0x2F, 0,
+        ];
+        let directory = std::env::temp_dir().join(format!("alesito-mix-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let output = directory.join("render.wav");
+
+        render_midi_to_wav(&midi, &default_soundfont(), &output, 30).unwrap();
+
+        let wav = std::fs::read(&output).unwrap();
+        assert!(wav.len() > 44);
+        assert_eq!(&wav[..4], b"RIFF");
+        assert_eq!(&wav[8..12], b"WAVE");
+        std::fs::remove_dir_all(directory).unwrap();
+    }
 }

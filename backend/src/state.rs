@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use basic_pitch_transcription::{Transcriber, TranscriptionResult};
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, Semaphore};
 use uuid::Uuid;
 
 /// Configuración de límites de recursos del servidor.
@@ -72,6 +72,7 @@ pub struct Job {
 pub struct AppState {
     pub transcriber: Arc<Transcriber>,
     pub jobs: Arc<RwLock<HashMap<Uuid, Job>>>,
+    pub audio_render_slots: Arc<Semaphore>,
     pub temp_dir: PathBuf,
     pub soundfont: PathBuf,
     pub config: ServerConfig,
@@ -82,6 +83,7 @@ impl AppState {
         Self {
             transcriber: Arc::new(transcriber),
             jobs: Arc::new(RwLock::new(HashMap::new())),
+            audio_render_slots: Arc::new(Semaphore::new(2)),
             temp_dir,
             soundfont,
             config: ServerConfig::default(),
