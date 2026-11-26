@@ -215,5 +215,7 @@ export function parseMidi(buffer) {
     (duration, note) => Math.max(duration, note.end_time),
     tickToSeconds(lastTick),
   )
-  return { notes, duration_seconds }
+  const initialTempo = tempoSegments[0]?.microsecondsPerQuarter || 500000
+  const bpm = Math.round(60000000 / initialTempo)
+  return { notes, duration_seconds, bpm }
 }

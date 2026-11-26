@@ -8,6 +8,7 @@ export interface PianoRollNote {
 export interface MidiParseResult {
   notes: PianoRollNote[]
   duration_seconds: number
+  bpm: number
 }
 
 export function parseMidi(buffer: ArrayBuffer): MidiParseResult

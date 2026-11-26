@@ -7,6 +7,7 @@ const props = defineProps<{
   currentTime: number
   duration: number
   orientation?: 'vertical' | 'horizontal'
+  zoom?: number
 }>()
 
 const canvas = ref<HTMLCanvasElement | null>(null)
@@ -15,9 +16,12 @@ const viewportWidth = ref(0)
 let resizeObserver: ResizeObserver | null = null
 const noteNames = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B']
 const blackPitchClasses = new Set([1, 3, 6, 8, 10])
-let animationFrame = 0
+// render loop continuo para evitar parpadeos
 
-const secondsPerScreen = ref(5)
+const secondsPerScreen = computed(() => {
+  const z = Math.min(4, Math.max(0.25, props.zoom ?? 1))
+  return 5 / z
+})
 const orientation = computed(() => props.orientation ?? 'vertical')
 
 const pianoKeys = Array.from({ length: 88 }, (_, index) => {
@@ -29,6 +33,7 @@ const pianoKeys = Array.from({ length: 88 }, (_, index) => {
 })
 const whitePianoKeys = pianoKeys.filter((key) => !key.isBlack)
 const blackPianoKeys = pianoKeys.filter((key) => key.isBlack)
+const reversedPianoKeys = [...pianoKeys].reverse()
 const noteByPitch = new Map(pianoKeys.map((key) => [key.midi, key]))
 
 const effectiveKeyWidth = computed(() => {
@@ -38,7 +43,10 @@ const effectiveKeyWidth = computed(() => {
 })
 const contentWidth = computed(() => Math.max(whitePianoKeys.length * effectiveKeyWidth.value, viewportWidth.value || 320))
 const maxTime = computed(() => Math.max(props.duration, ...props.notes.map((n) => n.end_time), secondsPerScreen.value))
-const viewStartTime = computed(() => Math.max(0, props.currentTime))
+const viewStartTime = computed(() => {
+  const maxStart = Math.max(0, maxTime.value - secondsPerScreen.value)
+  return Math.min(maxStart, Math.max(0, props.currentTime))
+})
 
 const activePitches = computed(() => {
   const active = new Set<number>()
@@ -104,10 +112,11 @@ function drawPianoRoll() {
       if (note.end_time < start || note.start_time > end) continue
       const idx = note.pitch - 21
       if (idx < 0 || idx > 87) continue
+      const gap = 1
       const x = (note.start_time - start) * pps
-      const w = Math.max(2, (note.end_time - note.start_time) * pps)
-      const y = height - (idx + 1) * keyH
-      const h = Math.max(2, keyH - 1)
+      const w = Math.max(2, (note.end_time - note.start_time) * pps - gap)
+      const y = height - (idx + 1) * keyH + gap / 2
+      const h = Math.max(2, keyH - 1 - gap)
       const vel = 0.58 + (Math.max(1, note.velocity) / 127) * 0.34
       context.fillStyle = dark ? `rgba(245,245,245,${vel})` : `rgba(17,17,17,${vel})`
       context.fillRect(x, y, w, h)
@@ -148,18 +157,20 @@ function drawPianoRoll() {
       if (note.end_time < start || note.start_time > end) continue
       const key = noteByPitch.get(note.pitch)
       if (!key) continue
-      const noteHeight = Math.max(4, (note.end_time - note.start_time) * pps)
+      const gap = 1
+      const noteHeight = Math.max(2, (note.end_time - note.start_time) * pps - gap)
       const bottom = height - (note.start_time - start) * pps
       const top = bottom - noteHeight
       if (bottom < -2 || top > height + 2) continue
-      const noteWidth = whiteKeyW * (key.isBlack ? 0.55 : 0.82)
+      const noteWidth = whiteKeyW * (key.isBlack ? 0.55 : 0.82) - gap
       const centerX = key.isBlack ? key.whiteKeyIndex * whiteKeyW : (key.whiteKeyIndex + 0.5) * whiteKeyW
       const x = centerX - noteWidth / 2
       const y = Math.max(-noteHeight, top)
       const visibleHeight = Math.min(height - y, noteHeight)
+      if (visibleHeight <= 0 || noteWidth <= 0) continue
       const velocityOpacity = 0.58 + (Math.max(1, note.velocity) / 127) * 0.34
       context.fillStyle = dark ? `rgba(245,245,245,${velocityOpacity})` : `rgba(17,17,17,${velocityOpacity})`
-      const cornerRadius = Math.min(4, noteWidth / 2, visibleHeight / 2)
+      const cornerRadius = Math.max(0, Math.min(4, noteWidth / 2, visibleHeight / 2))
       context.beginPath(); context.roundRect(x, y, noteWidth, visibleHeight, cornerRadius); context.fill()
       context.strokeStyle = dark ? '#ffffff' : '#000000'; context.lineWidth = 1; context.stroke()
     }
@@ -171,15 +182,14 @@ function drawPianoRoll() {
   }
 }
 
+let raf = 0
 function animate() {
-  drawPianoRoll()
-  animationFrame = window.requestAnimationFrame(animate)
+  try { drawPianoRoll() } catch (e) { console.error('PianoRoll draw error', e) }
+  raf = requestAnimationFrame(animate)
 }
 
-watch(() => props.currentTime, () => { /* draw loop handles it */ })
-
 onMounted(() => {
-  animationFrame = window.requestAnimationFrame(animate)
+  raf = requestAnimationFrame(animate)
   if (viewport.value) {
     viewportWidth.value = viewport.value.clientWidth
     resizeObserver = new ResizeObserver((entries) => {
@@ -189,7 +199,7 @@ onMounted(() => {
   }
 })
 onBeforeUnmount(() => {
-  window.cancelAnimationFrame(animationFrame)
+  cancelAnimationFrame(raf)
   resizeObserver?.disconnect()
 })
 </script>
@@ -200,7 +210,7 @@ onBeforeUnmount(() => {
       <div class="piano-roll-inner" :class="{ 'is-horizontal': orientation === 'horizontal' }" :style="{ width: orientation === 'horizontal' ? '100%' : `${contentWidth}px` }">
         <div v-if="orientation === 'horizontal'" class="piano-left" aria-label="Teclado de piano vertical">
           <div
-            v-for="key in [...pianoKeys].reverse()"
+            v-for="key in reversedPianoKeys"
             :key="'h' + key.midi"
             class="piano-left-key"
             :class="{ black: key.isBlack, white: !key.isBlack, 'is-active': activePitches.has(key.midi) }"
@@ -233,7 +243,7 @@ onBeforeUnmount(() => {
               :key="key.midi"
               class="piano-black-key"
               :class="{ 'is-active': activePitches.has(key.midi) }"
-              :style="{ left: `${key.whiteKeyIndex * effectiveKeyWidth + effectiveKeyWidth * 0.5}px`, width: `${effectiveKeyWidth * 0.62}px` }"
+              :style="{ left: `${key.whiteKeyIndex * effectiveKeyWidth}px`, width: `${effectiveKeyWidth * 0.62}px` }"
             ></span>
           </div>
         </section>
