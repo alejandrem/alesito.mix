@@ -1,3 +1,4 @@
+use axum::body::Body;
 use axum::extract::{Multipart, Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
@@ -8,6 +9,92 @@ use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
 use crate::state::{AppState, Job, JobStatus};
+
+#[derive(Clone, Copy)]
+struct TranscriptionOptions {
+    frame_threshold: f64,
+    melodia_trick: bool,
+    midi_tempo: f64,
+    multiple_pitch_bends: bool,
+}
+
+impl Default for TranscriptionOptions {
+    fn default() -> Self {
+        Self {
+            frame_threshold: 0.3,
+            melodia_trick: true,
+            midi_tempo: 120.0,
+            multiple_pitch_bends: false,
+        }
+    }
+}
+
+async fn ensure_job_capacity(state: &AppState) -> AppResult<()> {
+    let jobs = state.jobs.read().await;
+    if jobs.len() >= state.config.max_jobs {
+        return Err(AppError::TooManyJobs(format!(
+            "servidor sobrecargado (maximo {} jobs activos)",
+            state.config.max_jobs
+        )));
+    }
+    Ok(())
+}
+
+fn audio_duration_seconds(path: &std::path::Path) -> Result<f64, String> {
+    use symphonia::core::errors::Error as SymphoniaError;
+    use symphonia::core::formats::FormatOptions;
+    use symphonia::core::io::MediaSourceStream;
+    use symphonia::core::meta::MetadataOptions;
+    use symphonia::core::probe::Hint;
+
+    let file = std::fs::File::open(path).map_err(|error| error.to_string())?;
+    let source = MediaSourceStream::new(Box::new(file), Default::default());
+    let probed = symphonia::default::get_probe()
+        .format(
+            &Hint::new(),
+            source,
+            &FormatOptions::default(),
+            &MetadataOptions::default(),
+        )
+        .map_err(|error| error.to_string())?;
+    let mut format = probed.format;
+    let track = format
+        .default_track()
+        .ok_or_else(|| "el audio no contiene pistas".to_string())?;
+    let track_id = track.id;
+    let sample_rate = track
+        .codec_params
+        .sample_rate
+        .ok_or_else(|| "no se pudo determinar la frecuencia del audio".to_string())?;
+    if sample_rate == 0 {
+        return Err("frecuencia de audio inválida".into());
+    }
+    let mut frame_count = 0u64;
+
+    loop {
+        let packet = match format.next_packet() {
+            Ok(packet) => packet,
+            Err(SymphoniaError::IoError(error))
+                if error.kind() == std::io::ErrorKind::UnexpectedEof =>
+            {
+                break;
+            }
+            Err(error) => return Err(error.to_string()),
+        };
+        if packet.track_id() == track_id {
+            frame_count = frame_count.saturating_add(packet.dur());
+        }
+    }
+
+    if frame_count == 0 {
+        return Err("el audio no contiene frames decodificables".into());
+    }
+    Ok(frame_count as f64 / sample_rate as f64)
+}
+
+fn is_audio_duration_allowed(duration_seconds: f64, max_duration_seconds: u64) -> bool {
+    duration_seconds.is_finite() && duration_seconds <= max_duration_seconds as f64
+}
 
 /// Borra los archivos temporales de un job (audio original + WAV renderizado).
 fn cleanup_job_files(job: &Job) {
@@ -42,22 +129,10 @@ pub async fn create_transcription(
     State(state): State<AppState>,
     mut multipart: Multipart,
 ) -> AppResult<Json<serde_json::Value>> {
-    // Verificar limite de jobs activos.
-    {
-        let jobs = state.jobs.read().await;
-        if jobs.len() >= state.config.max_jobs {
-            return Err(AppError::TooManyJobs(format!(
-                "servidor sobrecargado (maximo {} jobs activos)",
-                state.config.max_jobs
-            )));
-        }
-    }
+    ensure_job_capacity(&state).await?;
 
     // Leer el archivo de audio del multipart, streaming directo a disco.
-    let mut frame_threshold: f64 = 0.3;
-    let mut melodia_trick: bool = true;
-    let mut midi_tempo: f64 = 120.0;
-    let mut multiple_pitch_bends: bool = false;
+    let mut options = TranscriptionOptions::default();
     let mut audio_path: Option<std::path::PathBuf> = None;
 
     let job_id = Uuid::new_v4();
@@ -96,44 +171,151 @@ pub async fn create_transcription(
                             max_size / 1024 / 1024
                         )));
                     }
-                    file.write_all(&chunk).await.map_err(|e| AppError::Internal(e.to_string()))?;
+                    file.write_all(&chunk)
+                        .await
+                        .map_err(|e| AppError::Internal(e.to_string()))?;
                 }
                 audio_path = Some(path);
             }
             Some("frame_threshold") => {
-                let v = field.text().await.map_err(|e| AppError::BadRequest(e.to_string()))?;
-                frame_threshold = v.parse().map_err(|_| AppError::BadRequest("frame_threshold invalido".into()))?;
+                let v = field
+                    .text()
+                    .await
+                    .map_err(|e| AppError::BadRequest(e.to_string()))?;
+                options.frame_threshold = v
+                    .parse()
+                    .map_err(|_| AppError::BadRequest("frame_threshold invalido".into()))?;
             }
             Some("melodia_trick") => {
-                let v = field.text().await.map_err(|e| AppError::BadRequest(e.to_string()))?;
-                melodia_trick = v == "true" || v == "1";
+                let v = field
+                    .text()
+                    .await
+                    .map_err(|e| AppError::BadRequest(e.to_string()))?;
+                options.melodia_trick = v == "true" || v == "1";
             }
             Some("midi_tempo") => {
-                let v = field.text().await.map_err(|e| AppError::BadRequest(e.to_string()))?;
-                midi_tempo = v.parse().map_err(|_| AppError::BadRequest("midi_tempo invalido".into()))?;
+                let v = field
+                    .text()
+                    .await
+                    .map_err(|e| AppError::BadRequest(e.to_string()))?;
+                options.midi_tempo = v
+                    .parse()
+                    .map_err(|_| AppError::BadRequest("midi_tempo invalido".into()))?;
             }
             Some("multiple_pitch_bends") => {
-                let v = field.text().await.map_err(|e| AppError::BadRequest(e.to_string()))?;
-                multiple_pitch_bends = v == "true" || v == "1";
+                let v = field
+                    .text()
+                    .await
+                    .map_err(|e| AppError::BadRequest(e.to_string()))?;
+                options.multiple_pitch_bends = v == "true" || v == "1";
             }
             _ => {}
         }
     }
 
-    let audio_path = audio_path
-        .ok_or_else(|| AppError::BadRequest("falta el campo 'audio'".into()))?;
+    let audio_path =
+        audio_path.ok_or_else(|| AppError::BadRequest("falta el campo 'audio'".into()))?;
 
-    // Validacion de parametros.
-    if !(0.0..=1.0).contains(&frame_threshold) {
-        let _ = tokio::fs::remove_file(&audio_path).await;
-        return Err(AppError::BadRequest("frame_threshold fuera de rango".into()));
+    start_transcription(state, job_id, audio_path, options).await
+}
+
+pub async fn create_transcription_audio(
+    State(state): State<AppState>,
+    body: Body,
+) -> AppResult<Json<serde_json::Value>> {
+    ensure_job_capacity(&state).await?;
+
+    let upload_started = std::time::Instant::now();
+    let job_id = Uuid::new_v4();
+    let audio_path = state.temp_dir.join(format!("{job_id}.mp3"));
+    let mut file = tokio::fs::File::create(&audio_path)
+        .await
+        .map_err(|error| AppError::Internal(error.to_string()))?;
+    let mut total_size = 0u64;
+    let max_size = state.config.max_audio_size_bytes;
+
+    use futures::StreamExt;
+    use tokio::io::AsyncWriteExt;
+    let mut stream = body.into_data_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = match chunk {
+            Ok(chunk) => chunk,
+            Err(error) => {
+                let _ = tokio::fs::remove_file(&audio_path).await;
+                return Err(AppError::BadRequest(error.to_string()));
+            }
+        };
+        total_size += chunk.len() as u64;
+        if total_size > max_size {
+            let _ = tokio::fs::remove_file(&audio_path).await;
+            return Err(AppError::BadRequest(format!(
+                "audio demasiado grande (maximo {} MB)",
+                max_size / 1024 / 1024
+            )));
+        }
+        if let Err(error) = file.write_all(&chunk).await {
+            let _ = tokio::fs::remove_file(&audio_path).await;
+            return Err(AppError::Internal(error.to_string()));
+        }
     }
-    if midi_tempo <= 0.0 {
+    drop(file);
+    tracing::info!(
+        %job_id,
+        bytes = total_size,
+        upload_ms = upload_started.elapsed().as_millis(),
+        "audio recibido"
+    );
+
+    start_transcription(state, job_id, audio_path, TranscriptionOptions::default()).await
+}
+
+async fn start_transcription(
+    state: AppState,
+    job_id: Uuid,
+    audio_path: std::path::PathBuf,
+    options: TranscriptionOptions,
+) -> AppResult<Json<serde_json::Value>> {
+    if !(0.0..=1.0).contains(&options.frame_threshold) {
+        let _ = tokio::fs::remove_file(&audio_path).await;
+        return Err(AppError::BadRequest(
+            "frame_threshold fuera de rango".into(),
+        ));
+    }
+    if !options.midi_tempo.is_finite() || options.midi_tempo <= 0.0 {
         let _ = tokio::fs::remove_file(&audio_path).await;
         return Err(AppError::BadRequest("midi_tempo invalido".into()));
     }
 
-    // Crear job.
+    let validation_started = std::time::Instant::now();
+    let duration_path = audio_path.clone();
+    let duration =
+        match tokio::task::spawn_blocking(move || audio_duration_seconds(&duration_path)).await {
+            Ok(Ok(duration)) => duration,
+            Ok(Err(error)) => {
+                let _ = tokio::fs::remove_file(&audio_path).await;
+                return Err(AppError::BadRequest(format!(
+                    "audio inválido o formato no soportado: {error}"
+                )));
+            }
+            Err(error) => {
+                let _ = tokio::fs::remove_file(&audio_path).await;
+                return Err(AppError::Internal(error.to_string()));
+            }
+        };
+    if !is_audio_duration_allowed(duration, state.config.max_audio_duration_secs) {
+        let _ = tokio::fs::remove_file(&audio_path).await;
+        return Err(AppError::BadRequest(format!(
+            "audio demasiado largo (máximo {} minutos)",
+            state.config.max_audio_duration_secs / 60
+        )));
+    }
+    tracing::info!(
+        %job_id,
+        audio_duration_seconds = duration,
+        validation_ms = validation_started.elapsed().as_millis(),
+        "validación de audio completada"
+    );
+
     {
         let mut jobs = state.jobs.write().await;
         jobs.insert(
@@ -150,11 +332,9 @@ pub async fn create_transcription(
         );
     }
 
-    // Lanzar transcripción en background.
     let state_clone = state.clone();
     let timeout_secs = state.config.fluidsynth_timeout_secs;
     tokio::spawn(async move {
-        // Marcar como running.
         {
             let mut jobs = state_clone.jobs.write().await;
             if let Some(job) = jobs.get_mut(&job_id) {
@@ -163,43 +343,69 @@ pub async fn create_transcription(
         }
 
         let mut transcriber = (*state_clone.transcriber).clone();
-        transcriber.config.note_detection.frame_threshold = frame_threshold;
-        transcriber.config.note_detection.melodia_trick = melodia_trick;
-        transcriber.config.midi_tempo = midi_tempo;
-        transcriber.config.multiple_pitch_bends = multiple_pitch_bends;
+        transcriber.config.note_detection.frame_threshold = options.frame_threshold;
+        transcriber.config.note_detection.melodia_trick = options.melodia_trick;
+        transcriber.config.midi_tempo = options.midi_tempo;
+        transcriber.config.multiple_pitch_bends = options.multiple_pitch_bends;
 
         let path = audio_path.clone();
+        let transcription_started = std::time::Instant::now();
         let outcome = tokio::task::spawn_blocking(move || transcriber.transcribe(&path)).await;
+        let transcription_ms = transcription_started.elapsed().as_millis();
 
         let mut jobs = state_clone.jobs.write().await;
         if let Some(job) = jobs.get_mut(&job_id) {
             match outcome {
                 Ok(Ok(result)) => {
+                    tracing::info!(
+                        %job_id,
+                        transcription_ms,
+                        notes = result.notes.len(),
+                        "transcripción Rust completada"
+                    );
                     let wav_path = state_clone.temp_dir.join(format!("{job_id}.wav"));
-                    match crate::audio::render_midi_to_wav(&result.midi_data, &state_clone.soundfont, &wav_path, timeout_secs) {
+                    let render_started = std::time::Instant::now();
+                    match crate::audio::render_midi_to_wav(
+                        &result.midi_data,
+                        &state_clone.soundfont,
+                        &wav_path,
+                        timeout_secs,
+                    ) {
                         Ok(()) => {
-                            job.rendered_audio = Some(wav_path);
+                            tracing::info!(
+                                %job_id,
+                                render_ms = render_started.elapsed().as_millis(),
+                                "renderizado WAV completado"
+                            );
+                            job.rendered_audio = Some(wav_path)
                         }
-                        Err(e) => {
-                            // La transcripción sigue siendo útil aunque no se pueda generar el WAV.
+                        Err(error) => {
+                            tracing::warn!(
+                                %job_id,
+                                render_ms = render_started.elapsed().as_millis(),
+                                %error,
+                                "falló el renderizado WAV"
+                            );
                             let _ = std::fs::remove_file(&wav_path);
-                            job.error = Some(format!("transcripción lista; audio no disponible: {e}"));
+                            job.error =
+                                Some(format!("transcripción lista; audio no disponible: {error}"));
                         }
                     }
                     job.result = Some(result);
                     job.status = JobStatus::Done;
                 }
-                Ok(Err(e)) => {
-                    // Borrar archivos temporales al fallar la transcripción.
+                Ok(Err(error)) => {
+                    tracing::warn!(%job_id, transcription_ms, %error, "falló la transcripción Rust");
                     job.status = JobStatus::Failed;
-                    job.error = Some(e.to_string());
+                    job.error = Some(error.to_string());
                     cleanup_job_files(job);
                     job.audio_path = None;
                     job.rendered_audio = None;
                 }
-                Err(e) => {
+                Err(error) => {
+                    tracing::warn!(%job_id, transcription_ms, %error, "se canceló la tarea de transcripción");
                     job.status = JobStatus::Failed;
-                    job.error = Some(format!("tarea cancelada: {e}"));
+                    job.error = Some(format!("tarea cancelada: {error}"));
                     cleanup_job_files(job);
                     job.audio_path = None;
                     job.rendered_audio = None;
@@ -216,7 +422,9 @@ pub async fn get_job(
     Path(id): Path<Uuid>,
 ) -> AppResult<Json<JobResponse>> {
     let jobs = state.jobs.read().await;
-    let job = jobs.get(&id).ok_or_else(|| AppError::NotFound("job no encontrado".into()))?;
+    let job = jobs
+        .get(&id)
+        .ok_or_else(|| AppError::NotFound("job no encontrado".into()))?;
 
     let (count, dur) = match &job.result {
         Some(r) => (Some(r.notes.len()), Some(r.duration_seconds)),
@@ -237,7 +445,9 @@ pub async fn get_notes(
     Path(id): Path<Uuid>,
 ) -> AppResult<Json<Vec<NoteDto>>> {
     let jobs = state.jobs.read().await;
-    let job = jobs.get(&id).ok_or_else(|| AppError::NotFound("job no encontrado".into()))?;
+    let job = jobs
+        .get(&id)
+        .ok_or_else(|| AppError::NotFound("job no encontrado".into()))?;
     let result = job
         .result
         .as_ref()
@@ -264,7 +474,9 @@ pub async fn get_midi(
     Path(id): Path<Uuid>,
 ) -> AppResult<impl IntoResponse> {
     let jobs = state.jobs.read().await;
-    let job = jobs.get(&id).ok_or_else(|| AppError::NotFound("job no encontrado".into()))?;
+    let job = jobs
+        .get(&id)
+        .ok_or_else(|| AppError::NotFound("job no encontrado".into()))?;
     let result = job
         .result
         .as_ref()
@@ -282,7 +494,9 @@ pub async fn get_audio(
     Path(id): Path<Uuid>,
 ) -> AppResult<impl IntoResponse> {
     let jobs = state.jobs.read().await;
-    let job = jobs.get(&id).ok_or_else(|| AppError::NotFound("job no encontrado".into()))?;
+    let job = jobs
+        .get(&id)
+        .ok_or_else(|| AppError::NotFound("job no encontrado".into()))?;
     let path = job
         .rendered_audio
         .clone()
@@ -293,9 +507,56 @@ pub async fn get_audio(
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?;
 
-    Ok((
-        StatusCode::OK,
-        [("content-type", "audio/wav")],
-        bytes,
-    ))
+    Ok((StatusCode::OK, [("content-type", "audio/wav")], bytes))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{audio_duration_seconds, is_audio_duration_allowed};
+
+    fn write_wav(path: &std::path::Path, frame_count: u32, sample_rate: u32) {
+        let data_size = frame_count * 2;
+        let mut wav = Vec::with_capacity(44 + data_size as usize);
+        wav.extend_from_slice(b"RIFF");
+        wav.extend_from_slice(&(36 + data_size).to_le_bytes());
+        wav.extend_from_slice(b"WAVEfmt ");
+        wav.extend_from_slice(&16u32.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&sample_rate.to_le_bytes());
+        wav.extend_from_slice(&(sample_rate * 2).to_le_bytes());
+        wav.extend_from_slice(&2u16.to_le_bytes());
+        wav.extend_from_slice(&16u16.to_le_bytes());
+        wav.extend_from_slice(b"data");
+        wav.extend_from_slice(&data_size.to_le_bytes());
+        wav.resize(44 + data_size as usize, 0);
+        std::fs::write(path, wav).unwrap();
+    }
+
+    #[test]
+    fn twelve_minute_limit_accepts_boundary_and_rejects_longer_audio() {
+        assert!(is_audio_duration_allowed(720.0, 720));
+        assert!(!is_audio_duration_allowed(720.001, 720));
+        assert!(!is_audio_duration_allowed(f64::INFINITY, 720));
+    }
+
+    #[test]
+    fn audio_duration_uses_decoded_packet_frames() {
+        let path = std::env::temp_dir().join(format!("test-audio-{}.wav", uuid::Uuid::new_v4()));
+        write_wav(&path, 8_000, 8_000);
+
+        let duration = audio_duration_seconds(&path).unwrap();
+        std::fs::remove_file(path).unwrap();
+
+        assert!((duration - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn invalid_audio_cannot_be_assigned_a_duration() {
+        let path = std::env::temp_dir().join(format!("invalid-audio-{}.mp3", uuid::Uuid::new_v4()));
+        std::fs::write(&path, b"not an audio file").unwrap();
+
+        assert!(audio_duration_seconds(&path).is_err());
+        std::fs::remove_file(path).unwrap();
+    }
 }

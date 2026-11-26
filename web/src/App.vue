@@ -23,6 +23,7 @@ const processing = ref(false)
 const jobId = ref<string | null>(null)
 const playbackActive = ref(false)
 const maxFileSize = 100 * 1024 * 1024
+const maxAudioDurationSeconds = 12 * 60
 let activeRequest: AbortController | null = null
 let audioSyncFrame = 0
 let fileSelectionId = 0
@@ -35,6 +36,26 @@ function selectTheme(dark: boolean) {
 
 function openFilePicker() {
   audioInput.value?.click()
+}
+
+function readAudioDuration(file: File): Promise<number | null> {
+  const audio = new Audio()
+  const source = URL.createObjectURL(file)
+
+  return new Promise((resolve) => {
+    const finish = (duration: number | null) => {
+      audio.onloadedmetadata = null
+      audio.onerror = null
+      audio.removeAttribute('src')
+      URL.revokeObjectURL(source)
+      resolve(duration)
+    }
+
+    audio.preload = 'metadata'
+    audio.onloadedmetadata = () => finish(Number.isFinite(audio.duration) ? audio.duration : null)
+    audio.onerror = () => finish(null)
+    audio.src = source
+  })
 }
 
 function stopPlayback() {
@@ -181,6 +202,15 @@ async function handleFileSelection(event: Event) {
   if (extension !== 'mp3' && file.type !== 'audio/mpeg') {
     errorMessage.value = 'Por ahora puedes cargar archivos MP3 o MIDI (.mid, .midi).'
     statusMessage.value = 'Formato no compatible.'
+    return
+  }
+
+  statusMessage.value = 'Comprobando duración del audio…'
+  const duration = await readAudioDuration(file)
+  if (selectionId !== fileSelectionId) return
+  if (duration !== null && duration > maxAudioDurationSeconds) {
+    errorMessage.value = 'El audio supera el límite de 12 minutos.'
+    statusMessage.value = 'No se pudo abrir el archivo.'
     return
   }
 

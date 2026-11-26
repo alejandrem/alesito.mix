@@ -15,3 +15,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 futures = "0.3"
 basic-pitch-transcription = { path = "../../basic-pitch-rs/crates/transcription" }
 basic-pitch-midi-io = { path = "../../basic-pitch-rs/crates/midi-io" }
+symphonia = { version = "0.5.5", features = ["wav", "flac", "ogg", "mp3", "aac", "pcm"] }
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }

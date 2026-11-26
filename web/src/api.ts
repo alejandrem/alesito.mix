@@ -26,11 +26,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export async function submitAudio(file: File, signal: AbortSignal): Promise<string> {
-  const form = new FormData()
-  form.append('audio', file)
-  const response = await request<{ job_id: string }>('/transcribe', {
+  const response = await request<{ job_id: string }>('/transcribe-audio', {
     method: 'POST',
-    body: form,
+    headers: { 'content-type': 'audio/mpeg' },
+    body: file,
     signal,
   })
   return response.job_id

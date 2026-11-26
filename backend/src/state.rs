@@ -13,6 +13,8 @@ pub struct ServerConfig {
     pub max_jobs: usize,
     /// Tamaño máximo de archivo de audio en bytes (default 100 MB).
     pub max_audio_size_bytes: u64,
+    /// Duración máxima del audio en segundos (default 12 minutos).
+    pub max_audio_duration_secs: u64,
     /// Timeout para fluidsynth en segundos (default 120s).
     pub fluidsynth_timeout_secs: u64,
 }
@@ -29,6 +31,10 @@ impl Default for ServerConfig {
                 .and_then(|v| v.parse::<u64>().ok())
                 .map(|mb| mb * 1024 * 1024)
                 .unwrap_or(100 * 1024 * 1024),
+            max_audio_duration_secs: std::env::var("MAX_AUDIO_DURATION_SECS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(12 * 60),
             fluidsynth_timeout_secs: std::env::var("FLUIDSYNTH_TIMEOUT_SECS")
                 .ok()
                 .and_then(|v| v.parse().ok())

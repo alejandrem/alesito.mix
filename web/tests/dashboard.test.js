@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
 const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+const api = readFileSync(new URL('../src/api.ts', import.meta.url), 'utf8')
 const pianoRoll = readFileSync(new URL('../src/PianoRoll.vue', import.meta.url), 'utf8')
 const styles = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8')
 
@@ -33,6 +34,11 @@ test('dashboard connects file controls to the backend and piano roll', () => {
   assert.match(app, /renderMidi\(file, controller\.signal\)/)
   assert.match(app, /getJobAudio\(id, controller\.signal\)/)
   assert.match(app, /submitAudio\(file, controller\.signal\)/)
+  assert.match(api, /'\/transcribe-audio'/)
+  assert.match(api, /body: file/)
+  assert.doesNotMatch(api, /new FormData\(\)/)
+  assert.match(app, /maxAudioDurationSeconds = 12 \* 60/)
+  assert.match(app, /duration > maxAudioDurationSeconds/)
   assert.match(app, /parseMidi\(await file\.arrayBuffer\(\)\)/)
   assert.match(pianoRoll, /class="piano-roll-canvas"/)
   assert.match(pianoRoll, /role="img"/)
