@@ -4,11 +4,55 @@ import { ref } from 'vue'
 const whiteKeys = ['C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'B4', 'C5', 'D5', 'E5', 'F5', 'G5', 'A5', 'B5']
 const blackKeyPositions = [0.65, 1.65, 3.65, 4.65, 5.65, 7.65, 8.65, 10.65, 11.65, 12.65]
 const isDark = ref(false)
+const showDashboard = ref(false)
+const audioInput = ref<HTMLInputElement | null>(null)
+const selectedAudio = ref<File | null>(null)
+
+const noteNames = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B']
+const blackPitchClasses = [1, 3, 6, 8, 10]
+let whiteKeyIndex = 0
+const pianoKeys = Array.from({ length: 88 }, (_, index) => {
+  const midi = 21 + index
+  const pitchClass = midi % 12
+  const isBlack = blackPitchClasses.includes(pitchClass)
+  const key = {
+    midi,
+    name: noteNames[pitchClass],
+    octave: Math.floor(midi / 12) - 1,
+    isBlack,
+    whiteKeyIndex,
+  }
+
+  if (!isBlack) whiteKeyIndex += 1
+  return key
+})
+const whitePianoKeys = pianoKeys.filter((key) => !key.isBlack)
+const blackPianoKeys = pianoKeys.filter((key) => key.isBlack)
 
 function selectTheme(dark: boolean) {
   isDark.value = dark
   document.documentElement.dataset.theme = dark ? 'dark' : 'light'
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#111111' : '#ffffff')
+}
+
+function openAudioPicker() {
+  audioInput.value?.click()
+}
+
+function handleAudioSelection(event: Event) {
+  const input = event.target as HTMLInputElement
+  selectedAudio.value = input.files?.[0] ?? null
+}
+
+function downloadAudio() {
+  if (!selectedAudio.value) return
+
+  const url = URL.createObjectURL(selectedAudio.value)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = selectedAudio.value.name
+  link.click()
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 const repositories = {
@@ -18,8 +62,8 @@ const repositories = {
 </script>
 
 <template>
-  <div class="page-shell">
-    <header class="topbar">
+  <div class="page-shell" :class="{ 'dashboard-shell': showDashboard }">
+    <header v-if="!showDashboard" class="topbar">
       <a class="brand" href="#inicio" aria-label="alesito.mix, inicio">
         <span class="brand-mark" aria-hidden="true">
           <svg viewBox="0 0 32 32" fill="none">
@@ -53,7 +97,7 @@ const repositories = {
       </div>
     </header>
 
-    <main id="inicio">
+    <main v-if="!showDashboard" id="inicio">
       <section class="hero" aria-labelledby="hero-title">
         <div class="hero-copy">
           <p class="eyebrow">UN LUGAR PARA TUS IDEAS MUSICALES</p>
@@ -94,6 +138,12 @@ const repositories = {
             <span aria-hidden="true">♩</span>
             Una bienvenida para quienes aman la música.
           </p>
+          <button class="next-button" type="button" @click="showDashboard = true">
+            Siguiente
+            <svg viewBox="0 0 20 20" aria-hidden="true">
+              <path d="M3.5 10h12m-5-5 5 5-5 5" />
+            </svg>
+          </button>
         </div>
 
         <div class="visual" role="img" aria-label="Ilustración de un pentagrama y un teclado de piano">
@@ -165,7 +215,74 @@ const repositories = {
       </section>
     </main>
 
-    <footer class="footer">
+    <main v-else class="dashboard">
+      <aside class="dashboard-sidebar" aria-label="Herramientas de audio">
+        <a class="brand dashboard-brand" href="#inicio" aria-label="Volver a la bienvenida" @click.prevent="showDashboard = false">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 32 32" fill="none">
+              <path d="M5 6h22v20H5z" fill="white" />
+              <path d="M5 6h22v20H5zM12.33 6v20M19.66 6v20" />
+              <path d="M9 6h5v11H9zM18 6h5v11h-5z" fill="currentColor" />
+            </svg>
+          </span>
+          <span>alesito<span class="brand-dot">.</span>mix</span>
+        </a>
+
+        <div class="sidebar-actions">
+          <input
+            ref="audioInput"
+            class="visually-hidden"
+            type="file"
+            accept="audio/*"
+            aria-label="Seleccionar archivo de audio"
+            @change="handleAudioSelection"
+          />
+          <button class="audio-action upload-action" type="button" @click="openAudioPicker">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 14v5h14v-5" />
+            </svg>
+            Cargar audio
+          </button>
+          <button
+            class="audio-action download-action"
+            type="button"
+            :disabled="!selectedAudio"
+            :title="selectedAudio ? `Descargar ${selectedAudio.name}` : 'Primero carga un audio'"
+            @click="downloadAudio"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 4v12m0 0 4.5-4.5M12 16l-4.5-4.5M5 19h14" />
+            </svg>
+            Descargar audio
+          </button>
+        </div>
+      </aside>
+
+      <section class="dashboard-workspace" aria-label="Área de trabajo para el piano roll">
+        <section class="piano-panel" aria-label="Teclado de piano; graves a la izquierda y agudas a la derecha">
+          <div class="piano-keys" role="img" aria-label="Teclado de piano de 88 teclas">
+            <div
+              v-for="key in whitePianoKeys"
+              :key="key.midi"
+              class="piano-white-key"
+              :class="{ 'octave-key': key.name === 'C' }"
+            >
+              <span v-if="key.name === 'C'">C{{ key.octave }}</span>
+              <span v-else-if="key.midi === 21">A0</span>
+              <span v-else-if="key.midi === 108">C8</span>
+            </div>
+            <span
+              v-for="key in blackPianoKeys"
+              :key="key.midi"
+              class="piano-black-key"
+              :style="{ left: `${(key.whiteKeyIndex / whitePianoKeys.length) * 100}%` }"
+            ></span>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <footer v-if="!showDashboard" class="footer">
       <span>alesito.mix <span class="footer-separator">/</span> música en movimiento</span>
       <span>Gracias por estar aquí <span class="footer-heart">♥</span></span>
     </footer>
