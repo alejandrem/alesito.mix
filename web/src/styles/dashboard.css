@@ -86,3 +86,27 @@
   .audio-action svg { width: 16px; height: 16px; }
 }
 @media (max-width: 370px) { .sidebar-actions { grid-template-columns: 1fr; } }
+
+/* Sidebar mockup */
+.sidebar-mockup { gap: 14px; overflow-y: auto; font-family: 'DM Sans', sans-serif; }
+.sidebar-head { text-align: center; padding-bottom: 10px; border-bottom: 1px solid var(--color-border); }
+.sidebar-title { font-size: 20px; font-weight: 700; letter-spacing: -0.5px; }
+.sidebar-subtitle { font-size: 11px; letter-spacing: 1px; color: var(--color-text-subtle); margin-top: 2px; }
+.sidebar-block { display: flex; flex-direction: column; gap: 8px; padding-bottom: 12px; border-bottom: 1px solid var(--color-border); }
+.sidebar-filename { text-align: center; font-size: 12px; color: var(--color-text-secondary); word-break: break-word; }
+.sidebar-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.sidebar-row .audio-action { justify-content: center; min-height: 38px; font-size: 12px; }
+.sidebar-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; font-size: 11px; color: var(--color-text-subtle); font-family: var(--mono); text-align: center; }
+.sidebar-stats span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sidebar-transport { grid-template-columns: repeat(3, 1fr); }
+.sidebar-section-title { text-align: center; font-size: 12px; font-weight: 600; letter-spacing: 0.5px; color: var(--color-text-secondary); }
+.sidebar-range { width: 100%; accent-color: var(--color-accent); }
+.sidebar-range-value { text-align: right; font-size: 11px; color: var(--color-text-subtle); font-family: var(--mono); }
+.sidebar-field { display: flex; justify-content: space-between; font-size: 11px; color: var(--color-text-secondary); }
+.sidebar-freq-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.sidebar-freq { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--color-text-subtle); }
+.sidebar-freq input { width: 100%; min-height: 34px; border: 1px solid var(--color-border-strong); background: var(--color-bg-elevated); color: var(--color-text); padding: 0 8px; font: 12px var(--mono); }
+.sidebar-help { font-size: 11px; color: var(--color-text-subtle); text-align: center; }
+.sidebar-zoom-row { grid-template-columns: 40px 1fr 40px; align-items: center; }
+.sidebar-zoom-row .audio-action { min-height: 34px; padding: 0; }
+.sidebar-footer-note { text-align: center; font-size: 11px; color: var(--color-text-subtle); padding: 4px 0; }

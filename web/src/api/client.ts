@@ -20,15 +20,39 @@ function errorMessage(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback
 }
 
-export async function submitAudio(file: File, signal: AbortSignal): Promise<string> {
+export interface TranscribeOptions {
+  onset_threshold?: number
+  frame_threshold?: number
+  minimum_note_length_ms?: number
+  min_freq?: number
+  max_freq?: number
+  melodia_trick?: boolean
+  midi_tempo?: number
+}
+
+export async function submitAudio(file: File, signal: AbortSignal, opts: TranscribeOptions = {}): Promise<string> {
   try {
+    const params: Record<string, string> = {}
+    for (const [k, v] of Object.entries(opts)) if (v !== undefined && v !== null) params[k] = String(v)
     const { data } = await http.post<{ job_id: string }>('/transcribe-audio', file, {
       headers: { 'content-type': file.type || 'application/octet-stream' },
+      params,
       signal,
     })
     return data.job_id
   } catch (err) {
     throw new Error(errorMessage(err, 'No se pudo enviar el audio'))
+  }
+}
+
+export async function retranscribeJob(jobId: string, opts: TranscribeOptions = {}, signal?: AbortSignal): Promise<string> {
+  try {
+    const params: Record<string, string> = {}
+    for (const [k, v] of Object.entries(opts)) if (v !== undefined && v !== null) params[k] = String(v)
+    const { data } = await http.post<{ job_id: string }>(`/jobs/${encodeURIComponent(jobId)}/retranscribe`, null, { params, signal })
+    return data.job_id
+  } catch (err) {
+    throw new Error(errorMessage(err, 'No se pudo re-transcribir'))
   }
 }
 
