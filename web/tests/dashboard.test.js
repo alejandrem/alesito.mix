@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
 const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8')
+const pianoRoll = readFileSync(new URL('../src/PianoRoll.vue', import.meta.url), 'utf8')
 const styles = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8')
 
 function cssRule(selector) {
@@ -13,23 +14,38 @@ function cssRule(selector) {
   return match[1]
 }
 
-test('dashboard keeps its sidebar controls and complete piano keyboard', () => {
+test('dashboard connects file controls to the backend and piano roll', () => {
   const dashboard = app.match(/<main v-else class="dashboard">([\s\S]*?)<\/main>/)?.[1]
 
   assert.ok(dashboard, 'Expected the dashboard view to remain in the app')
   assert.match(dashboard, /class="dashboard-sidebar"/)
-  assert.match(dashboard, /Cargar audio/)
-  assert.match(dashboard, /Descargar audio/)
+  assert.match(dashboard, /Cargar archivo/)
+  assert.match(dashboard, /Descargar MIDI/)
   assert.match(dashboard, /class="dashboard-workspace"/)
-  assert.match(dashboard, /class="piano-keys" role="img" aria-label="Teclado de piano de 88 teclas"/)
-  assert.match(dashboard, /v-for="key in whitePianoKeys"/)
-  assert.match(dashboard, /v-for="key in blackPianoKeys"/)
-  assert.match(app, /Array\.from\(\{ length: 88 \}/)
+  assert.match(dashboard, /<PianoRoll :notes="notes"/)
+  assert.match(dashboard, /accept="\.mid,\.midi,\.mp3,audio\/mpeg"/)
+  assert.match(dashboard, /aria-label="playbackActive \? 'Pausar reproducción' : 'Reproducir'"/)
+  assert.match(dashboard, /@click="togglePlayback"/)
+  assert.match(dashboard, /<div class="midi-transport">/)
+  assert.match(dashboard, /class="audio-action play-action"[\s\S]*?:disabled="!audioSource"/)
+  assert.match(app, /player\.play\(\)/)
+  assert.match(app, /function togglePlayback\(\)/)
+  assert.match(app, /renderMidi\(file, controller\.signal\)/)
+  assert.match(app, /getJobAudio\(id, controller\.signal\)/)
+  assert.match(app, /submitAudio\(file, controller\.signal\)/)
+  assert.match(app, /parseMidi\(await file\.arrayBuffer\(\)\)/)
+  assert.match(pianoRoll, /class="piano-roll-canvas"/)
+  assert.match(pianoRoll, /role="img"/)
+  assert.match(pianoRoll, /v-for="key in whitePianoKeys"/)
+  assert.match(pianoRoll, /v-for="key in blackPianoKeys"/)
+  assert.match(pianoRoll, /Array\.from\(\{ length: 88 \}/)
 })
 
-test('dashboard layout keeps the piano at the bottom without page overflow', () => {
+test('dashboard layout keeps the animated piano roll above the full-width piano', () => {
   const dashboard = cssRule('.dashboard')
   const workspace = cssRule('.dashboard-workspace')
+  const pianoRollView = cssRule('.piano-roll-view')
+  const canvas = cssRule('.piano-roll-canvas')
   const pianoPanel = cssRule('.piano-panel')
   const pianoKeys = cssRule('.piano-keys')
 
@@ -39,6 +55,10 @@ test('dashboard layout keeps the piano at the bottom without page overflow', () 
   assert.match(workspace, /justify-content:\s*flex-end\s*;/)
   assert.match(workspace, /overflow:\s*hidden\s*;/)
   assert.match(workspace, /repeating-linear-gradient/)
+  assert.match(pianoRollView, /flex-direction:\s*column\s*;/)
+  assert.match(pianoRollView, /min-height:\s*0\s*;/)
+  assert.match(canvas, /flex:\s*1 1 auto\s*;/)
+  assert.match(canvas, /width:\s*100%\s*;/)
   assert.match(pianoPanel, /width:\s*100%\s*;/)
   assert.match(pianoKeys, /width:\s*100%\s*;/)
 })

@@ -1,33 +1,31 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onBeforeUnmount, ref } from 'vue'
+import PianoRoll from './PianoRoll.vue'
+import { getJob, getJobAudio, getMidiFile, getNotes, renderMidi, submitAudio } from './api'
+import { parseMidi } from './midi.js'
 
 const whiteKeys = ['C4', 'D4', 'E4', 'F4', 'G4', 'A4', 'B4', 'C5', 'D5', 'E5', 'F5', 'G5', 'A5', 'B5']
 const blackKeyPositions = [0.65, 1.65, 3.65, 4.65, 5.65, 7.65, 8.65, 10.65, 11.65, 12.65]
 const isDark = ref(false)
 const showDashboard = ref(false)
 const audioInput = ref<HTMLInputElement | null>(null)
-const selectedAudio = ref<File | null>(null)
-
-const noteNames = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B']
-const blackPitchClasses = [1, 3, 6, 8, 10]
-let whiteKeyIndex = 0
-const pianoKeys = Array.from({ length: 88 }, (_, index) => {
-  const midi = 21 + index
-  const pitchClass = midi % 12
-  const isBlack = blackPitchClasses.includes(pitchClass)
-  const key = {
-    midi,
-    name: noteNames[pitchClass],
-    octave: Math.floor(midi / 12) - 1,
-    isBlack,
-    whiteKeyIndex,
-  }
-
-  if (!isBlack) whiteKeyIndex += 1
-  return key
-})
-const whitePianoKeys = pianoKeys.filter((key) => !key.isBlack)
-const blackPianoKeys = pianoKeys.filter((key) => key.isBlack)
+const selectedFile = ref<File | null>(null)
+const audioPlayer = ref<HTMLAudioElement | null>(null)
+const audioSource = ref<string | null>(null)
+const fileKind = ref<'audio' | 'midi' | null>(null)
+const notes = ref<Array<{ start_time: number; end_time: number; pitch: number; velocity: number }>>([])
+const durationSeconds = ref(0)
+const currentTime = ref(0)
+const statusMessage = ref('Carga un archivo MIDI o MP3 para empezar.')
+const errorMessage = ref('')
+const warningMessage = ref('')
+const processing = ref(false)
+const jobId = ref<string | null>(null)
+const playbackActive = ref(false)
+const maxFileSize = 100 * 1024 * 1024
+let activeRequest: AbortController | null = null
+let audioSyncFrame = 0
+let fileSelectionId = 0
 
 function selectTheme(dark: boolean) {
   isDark.value = dark
@@ -35,25 +33,239 @@ function selectTheme(dark: boolean) {
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#111111' : '#ffffff')
 }
 
-function openAudioPicker() {
+function openFilePicker() {
   audioInput.value?.click()
 }
 
-function handleAudioSelection(event: Event) {
+function stopPlayback() {
+  playbackActive.value = false
+}
+
+function togglePlayback() {
+  const player = audioPlayer.value
+  if (!player) return
+
+  if (player.paused) {
+    if (player.ended) player.currentTime = 0
+    void player.play().catch(() => {
+      errorMessage.value = 'No se pudo reproducir el audio.'
+    })
+  } else {
+    player.pause()
+  }
+}
+
+function resetMidiPlayback() {
+  const player = audioPlayer.value
+  if (player) {
+    player.pause()
+    player.currentTime = 0
+  }
+  stopPlayback()
+  currentTime.value = 0
+}
+
+function syncAudioTime() {
+  if (audioPlayer.value) currentTime.value = audioPlayer.value.currentTime
+}
+
+function syncAudioFrame() {
+  syncAudioTime()
+  if (audioPlayer.value && !audioPlayer.value.paused && !audioPlayer.value.ended) {
+    audioSyncFrame = window.requestAnimationFrame(syncAudioFrame)
+  } else {
+    audioSyncFrame = 0
+  }
+}
+
+function startAudioSync() {
+  playbackActive.value = true
+  window.cancelAnimationFrame(audioSyncFrame)
+  audioSyncFrame = window.requestAnimationFrame(syncAudioFrame)
+}
+
+function stopAudioSync() {
+  playbackActive.value = false
+  window.cancelAnimationFrame(audioSyncFrame)
+  audioSyncFrame = 0
+  syncAudioTime()
+}
+
+function waitForNextPoll(signal: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    if (signal.aborted) {
+      reject(new DOMException('Solicitud cancelada', 'AbortError'))
+      return
+    }
+
+    let timeout = 0
+    const cancel = () => {
+      window.clearTimeout(timeout)
+      reject(new DOMException('Solicitud cancelada', 'AbortError'))
+    }
+    timeout = window.setTimeout(() => {
+      signal.removeEventListener('abort', cancel)
+      resolve()
+    }, 750)
+    signal.addEventListener('abort', cancel, { once: true })
+  })
+}
+
+async function handleFileSelection(event: Event) {
   const input = event.target as HTMLInputElement
-  selectedAudio.value = input.files?.[0] ?? null
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  const selectionId = ++fileSelectionId
+
+  activeRequest?.abort()
+  activeRequest = null
+  processing.value = false
+  stopPlayback()
+  stopAudioSync()
+  audioPlayer.value?.pause()
+  if (audioSource.value) URL.revokeObjectURL(audioSource.value)
+  audioSource.value = null
+  selectedFile.value = file
+  fileKind.value = null
+  notes.value = []
+  durationSeconds.value = 0
+  currentTime.value = 0
+  jobId.value = null
+  warningMessage.value = ''
+  errorMessage.value = ''
+
+  if (file.size > maxFileSize) {
+    errorMessage.value = 'El archivo supera el límite de 100 MB.'
+    statusMessage.value = 'No se pudo abrir el archivo.'
+    return
+  }
+
+  const extension = file.name.split('.').pop()?.toLowerCase()
+  if (extension === 'mid' || extension === 'midi') {
+    fileKind.value = 'midi'
+    const controller = new AbortController()
+    activeRequest = controller
+    processing.value = true
+    statusMessage.value = 'Leyendo el archivo MIDI…'
+
+    try {
+      const parsed = parseMidi(await file.arrayBuffer())
+      if (selectionId !== fileSelectionId) return
+      if (parsed.notes.length === 0) throw new Error('El archivo MIDI no contiene notas.')
+      notes.value = parsed.notes
+      durationSeconds.value = parsed.duration_seconds
+      statusMessage.value = 'Generando sonido con el backend Rust…'
+      const renderedAudio = await renderMidi(file, controller.signal)
+      if (selectionId !== fileSelectionId) return
+      audioSource.value = URL.createObjectURL(renderedAudio)
+      statusMessage.value = `MIDI listo · ${parsed.notes.length} notas`
+    } catch (error) {
+      if (selectionId !== fileSelectionId || controller.signal.aborted) return
+      const message = error instanceof Error ? error.message : 'No se pudo procesar el MIDI.'
+      if (notes.value.length > 0) {
+        warningMessage.value = message
+        statusMessage.value = 'MIDI listo · audio no disponible'
+      } else {
+        fileKind.value = null
+        errorMessage.value = message
+        statusMessage.value = 'No se pudo abrir el archivo.'
+      }
+    } finally {
+      if (activeRequest === controller) activeRequest = null
+      if (selectionId === fileSelectionId && !controller.signal.aborted) processing.value = false
+    }
+    return
+  }
+
+  if (extension !== 'mp3' && file.type !== 'audio/mpeg') {
+    errorMessage.value = 'Por ahora puedes cargar archivos MP3 o MIDI (.mid, .midi).'
+    statusMessage.value = 'Formato no compatible.'
+    return
+  }
+
+  fileKind.value = 'audio'
+  const controller = new AbortController()
+  activeRequest = controller
+  processing.value = true
+  statusMessage.value = 'Enviando audio al motor Basic Pitch…'
+
+  try {
+    const id = await submitAudio(file, controller.signal)
+    jobId.value = id
+
+    let job
+    do {
+      job = await getJob(id, controller.signal)
+      statusMessage.value = job.status === 'queued'
+        ? 'Audio en espera…'
+        : job.status === 'running'
+          ? 'Transcribiendo notas…'
+          : 'Preparando el piano roll…'
+      if (job.status === 'failed') throw new Error(job.error || 'Falló la transcripción del audio.')
+      if (job.status !== 'done') await waitForNextPoll(controller.signal)
+    } while (job.status !== 'done')
+
+    notes.value = await getNotes(id, controller.signal)
+    durationSeconds.value = Math.max(job.duration_seconds || 0, ...notes.value.map((note) => note.end_time), 0)
+    warningMessage.value = job.error || ''
+    if (!job.error) {
+      statusMessage.value = 'Generando sonido con el backend Rust…'
+      try {
+        const renderedAudio = await getJobAudio(id, controller.signal)
+        if (selectionId !== fileSelectionId) return
+        audioSource.value = URL.createObjectURL(renderedAudio)
+      } catch (error) {
+        if (controller.signal.aborted) throw error
+        warningMessage.value = error instanceof Error ? error.message : 'No se pudo cargar el audio renderizado.'
+      }
+    }
+    if (selectionId === fileSelectionId) {
+      statusMessage.value = audioSource.value
+        ? `Transcripción lista · ${notes.value.length} notas`
+        : 'Transcripción lista · audio no disponible'
+    }
+  } catch (error) {
+    if (!controller.signal.aborted) {
+      errorMessage.value = error instanceof Error ? error.message : 'No se pudo transcribir el audio.'
+      statusMessage.value = 'No se pudo completar la transcripción.'
+    }
+  } finally {
+    if (activeRequest === controller) activeRequest = null
+    if (!controller.signal.aborted) processing.value = false
+  }
 }
 
-function downloadAudio() {
-  if (!selectedAudio.value) return
+async function downloadMidi() {
+  if (!selectedFile.value) return
+  try {
+    const file = fileKind.value === 'midi'
+      ? selectedFile.value
+      : jobId.value
+        ? await getMidiFile(jobId.value)
+        : null
+    if (!file) return
 
-  const url = URL.createObjectURL(selectedAudio.value)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = selectedAudio.value.name
-  link.click()
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+    const url = URL.createObjectURL(file)
+    const filename = selectedFile.value.name.replace(/\.[^.]+$/, '') + '.mid'
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    link.click()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : 'No se pudo descargar el MIDI.'
+  }
 }
+
+function clearAudioSource() {
+  activeRequest?.abort()
+  stopPlayback()
+  window.cancelAnimationFrame(audioSyncFrame)
+  if (audioSource.value) URL.revokeObjectURL(audioSource.value)
+}
+
+onBeforeUnmount(clearAudioSource)
 
 const repositories = {
   engine: 'https://github.com/alejandrem/basic-pitch-rs',
@@ -233,52 +445,69 @@ const repositories = {
             ref="audioInput"
             class="visually-hidden"
             type="file"
-            accept="audio/*"
-            aria-label="Seleccionar archivo de audio"
-            @change="handleAudioSelection"
+            accept=".mid,.midi,.mp3,audio/mpeg"
+            aria-label="Seleccionar archivo MP3 o MIDI"
+            @change="handleFileSelection"
           />
-          <button class="audio-action upload-action" type="button" @click="openAudioPicker">
+          <button class="audio-action upload-action" type="button" @click="openFilePicker">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 14v5h14v-5" />
             </svg>
-            Cargar audio
+            Cargar archivo
           </button>
           <button
             class="audio-action download-action"
             type="button"
-            :disabled="!selectedAudio"
-            :title="selectedAudio ? `Descargar ${selectedAudio.name}` : 'Primero carga un audio'"
-            @click="downloadAudio"
+            :disabled="!selectedFile || !fileKind || processing || (fileKind === 'audio' && !jobId)"
+            :title="selectedFile ? 'Descargar MIDI' : 'Primero carga un archivo'"
+            @click="downloadMidi"
           >
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M12 4v12m0 0 4.5-4.5M12 16l-4.5-4.5M5 19h14" />
             </svg>
-            Descargar audio
+            Descargar MIDI
           </button>
+        </div>
+
+        <p class="file-status" role="status" aria-live="polite">{{ statusMessage }}</p>
+        <p v-if="errorMessage" class="file-error" role="alert">{{ errorMessage }}</p>
+        <p v-if="warningMessage" class="file-warning" role="status">{{ warningMessage }}</p>
+
+        <div v-if="audioSource" class="audio-preview">
+          <audio
+            ref="audioPlayer"
+            :src="audioSource"
+            preload="metadata"
+            @timeupdate="syncAudioTime"
+            @seeked="syncAudioTime"
+            @play="startAudioSync"
+            @pause="stopAudioSync"
+            @ended="stopAudioSync"
+          ></audio>
+        </div>
+
+        <div class="midi-transport">
+          <button
+            class="audio-action play-action"
+            type="button"
+            :disabled="!audioSource"
+            :aria-label="playbackActive ? 'Pausar reproducción' : 'Reproducir'"
+            @click="togglePlayback"
+          >
+            <svg v-if="playbackActive" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+              <path d="M8 5v14m8-14v14" />
+            </svg>
+            <svg v-else viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+              <path d="m8 5 12 7-12 7z" />
+            </svg>
+            {{ playbackActive ? 'Pausar' : 'Reproducir' }}
+          </button>
+          <button v-if="fileKind === 'midi'" class="audio-action" type="button" @click="resetMidiPlayback">Reiniciar</button>
         </div>
       </aside>
 
       <section class="dashboard-workspace" aria-label="Área de trabajo para el piano roll">
-        <section class="piano-panel" aria-label="Teclado de piano; graves a la izquierda y agudas a la derecha">
-          <div class="piano-keys" role="img" aria-label="Teclado de piano de 88 teclas">
-            <div
-              v-for="key in whitePianoKeys"
-              :key="key.midi"
-              class="piano-white-key"
-              :class="{ 'octave-key': key.name === 'C' }"
-            >
-              <span v-if="key.name === 'C'">C{{ key.octave }}</span>
-              <span v-else-if="key.midi === 21">A0</span>
-              <span v-else-if="key.midi === 108">C8</span>
-            </div>
-            <span
-              v-for="key in blackPianoKeys"
-              :key="key.midi"
-              class="piano-black-key"
-              :style="{ left: `${(key.whiteKeyIndex / whitePianoKeys.length) * 100}%` }"
-            ></span>
-          </div>
-        </section>
+        <PianoRoll :notes="notes" :current-time="currentTime" :duration="durationSeconds" />
       </section>
     </main>
 
