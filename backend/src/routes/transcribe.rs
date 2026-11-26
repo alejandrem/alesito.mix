@@ -1,4 +1,5 @@
 use axum::body::Body;
+use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Multipart, Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
@@ -8,7 +9,7 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
-use crate::state::{AppState, Job, JobStatus};
+use crate::state::{AppState, Job, JobStatus, ProgressEvent};
 
 #[derive(Clone, Copy)]
 struct TranscriptionOptions {
@@ -316,6 +317,9 @@ async fn start_transcription(
         "validación de audio completada"
     );
 
+    let (progress_tx, _) = tokio::sync::broadcast::channel(16);
+    let _ = progress_tx.send(ProgressEvent::stage("queued", 0));
+
     {
         let mut jobs = state.jobs.write().await;
         jobs.insert(
@@ -328,17 +332,20 @@ async fn start_transcription(
                 error: None,
                 rendered_audio: None,
                 created_at: std::time::Instant::now(),
+                progress_tx: progress_tx.clone(),
             },
         );
     }
 
     let state_clone = state.clone();
     let timeout_secs = state.config.fluidsynth_timeout_secs;
+    let progress_tx_task = progress_tx.clone();
     tokio::spawn(async move {
         {
             let mut jobs = state_clone.jobs.write().await;
             if let Some(job) = jobs.get_mut(&job_id) {
                 job.status = JobStatus::Running;
+                let _ = job.progress_tx.send(ProgressEvent::stage("transcribing", 10));
             }
         }
 
@@ -391,21 +398,28 @@ async fn start_transcription(
                                 Some(format!("transcripción lista; audio no disponible: {error}"));
                         }
                     }
+                    let notes = result.notes.len();
+                    let duration = result.duration_seconds;
                     job.result = Some(result);
                     job.status = JobStatus::Done;
+                    let _ = progress_tx_task.send(ProgressEvent::Done { notes, duration });
                 }
                 Ok(Err(error)) => {
                     tracing::warn!(%job_id, transcription_ms, %error, "falló la transcripción Rust");
+                    let message = error.to_string();
+                    let _ = progress_tx_task.send(ProgressEvent::Error { message: message.clone() });
                     job.status = JobStatus::Failed;
-                    job.error = Some(error.to_string());
+                    job.error = Some(message);
                     cleanup_job_files(job);
                     job.audio_path = None;
                     job.rendered_audio = None;
                 }
                 Err(error) => {
                     tracing::warn!(%job_id, transcription_ms, %error, "se canceló la tarea de transcripción");
+                    let message = format!("tarea cancelada: {error}");
+                    let _ = progress_tx_task.send(ProgressEvent::Error { message: message.clone() });
                     job.status = JobStatus::Failed;
-                    job.error = Some(format!("tarea cancelada: {error}"));
+                    job.error = Some(message);
                     cleanup_job_files(job);
                     job.audio_path = None;
                     job.rendered_audio = None;
@@ -508,6 +522,76 @@ pub async fn get_audio(
         .map_err(|e| AppError::Internal(e.to_string()))?;
 
     Ok((StatusCode::OK, [("content-type", "audio/wav")], bytes))
+}
+
+pub async fn ws_job(
+    ws: WebSocketUpgrade,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> impl IntoResponse {
+    ws.on_upgrade(move |socket| handle_ws_job(socket, state, id))
+}
+
+async fn handle_ws_job(mut socket: WebSocket, state: AppState, id: Uuid) {
+    let (mut rx, current) = {
+        let jobs = state.jobs.read().await;
+        let Some(job) = jobs.get(&id) else {
+            let _ = socket
+                .send(Message::Text(
+                    serde_json::json!({"type":"error","message":"job no encontrado"}).to_string().into(),
+                ))
+                .await;
+            return;
+        };
+        let rx = job.progress_tx.subscribe();
+        let current = match job.status {
+            JobStatus::Queued => ProgressEvent::stage("queued", 0),
+            JobStatus::Running => ProgressEvent::stage("transcribing", 10),
+            JobStatus::Done => {
+                let (notes, duration) = job
+                    .result
+                    .as_ref()
+                    .map(|r| (r.notes.len(), r.duration_seconds))
+                    .unwrap_or((0, 0.0));
+                ProgressEvent::Done { notes, duration }
+            }
+            JobStatus::Failed => ProgressEvent::Error {
+                message: job.error.clone().unwrap_or_else(|| "error desconocido".into()),
+            },
+        };
+        (rx, current)
+    };
+
+    if send_progress(&mut socket, &current).await.is_err() {
+        return;
+    }
+    if matches!(current, ProgressEvent::Done { .. } | ProgressEvent::Error { .. }) {
+        return;
+    }
+
+    loop {
+        tokio::select! {
+            msg = socket.recv() => {
+                if msg.is_none() { break; }
+            }
+            evt = rx.recv() => {
+                match evt {
+                    Ok(event) => {
+                        let done = matches!(event, ProgressEvent::Done { .. } | ProgressEvent::Error { .. });
+                        if send_progress(&mut socket, &event).await.is_err() { break; }
+                        if done { break; }
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                }
+            }
+        }
+    }
+}
+
+async fn send_progress(socket: &mut WebSocket, event: &ProgressEvent) -> Result<(), axum::Error> {
+    let text = serde_json::to_string(event).unwrap_or_else(|_| "{\"type\":\"error\",\"message\":\"serialization\"}".to_string());
+    socket.send(Message::Text(text.into())).await
 }
 
 #[cfg(test)]

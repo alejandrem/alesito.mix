@@ -3,7 +3,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use basic_pitch_transcription::{Transcriber, TranscriptionResult};
-use tokio::sync::{RwLock, Semaphore};
+use serde::Serialize;
+use tokio::sync::{broadcast, RwLock, Semaphore};
 use uuid::Uuid;
 
 /// Configuración de límites de recursos del servidor.
@@ -62,6 +63,37 @@ impl JobStatus {
     }
 }
 
+#[derive(Clone, Debug, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ProgressEvent {
+    Progress {
+        stage: String,
+        percent: u8,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        window: Option<usize>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        total: Option<usize>,
+    },
+    Done {
+        notes: usize,
+        duration: f64,
+    },
+    Error {
+        message: String,
+    },
+}
+
+impl ProgressEvent {
+    pub fn stage(stage: &str, percent: u8) -> Self {
+        Self::Progress {
+            stage: stage.to_string(),
+            percent,
+            window: None,
+            total: None,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct Job {
     pub id: Uuid,
@@ -72,6 +104,7 @@ pub struct Job {
     pub error: Option<String>,
     pub rendered_audio: Option<PathBuf>,
     pub created_at: std::time::Instant,
+    pub progress_tx: broadcast::Sender<ProgressEvent>,
 }
 
 #[derive(Clone)]
