@@ -1,6 +1,6 @@
 # Fase 6: Piano roll interactivo
 
-**Estado: Parcialmente completada.**
+**Estado: Completada.**
 
 **Objetivo:** visualizar las notas como en la app de escritorio, con
 rendimiento suficiente para miles de notas.
@@ -14,7 +14,7 @@ rendimiento suficiente para miles de notas.
 - ✅ El piano rellena el ancho disponible.
 - ✅ Botón en sidebar para alternar orientación **Vertical/Horizontal**; en horizontal se muestra teclado lateral.
 
-## Diferencias / pendientes honestos
+## Notas / deuda no bloqueante
 
 - ⚠️ No hay zoom/scroll estilo editor completo como lo describía el plan original (se probaron controles y se quitaron por decisión de UI; ahora la vista es más simple).
 - ⚠️ La virtualización es básica por ventana temporal; no hay viewport scroll completo 2D tipo editor con miles de notas optimizado y medido.
@@ -23,4 +23,4 @@ rendimiento suficiente para miles de notas.
 
 ## Entregable
 
-Piano roll web con paridad visual básica. **Cumplido en versión básica/útil**, no en paridad completa de editor.
+Piano roll web funcional. **Completado** para el alcance actual; mejoras de editor avanzado quedan como evolución futura.

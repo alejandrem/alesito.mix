@@ -1,6 +1,15 @@
 # Fase 8: Persistencia y proyectos (SQLite)
 
+**Estado: Pendiente (alcance definido: solo versión descargable).**
+
 **Objetivo:** guardar proyectos, configuraciones y resultados.
+
+## Decisión de alcance
+
+- **La base de datos SQLite aplica solo a la versión descargable/escritorio** (por ejemplo la app empaquetada con Tauri o una distribución local). Su propósito es guardar proyectos, transcripciones y configuración entre sesiones en el dispositivo del usuario.
+- **La versión web en producción no tendrá base de datos ni persistencia de proyectos.** En producción web, el backend seguirá siendo stateless/en memoria: los jobs se procesan, se exponen por TTL y no se persisten entre reinicios o sesiones.
+- **Motivo:** evitar costo/complejidad operativa en producción (DB administrada, backups, almacenamiento, privacidad de archivos de usuario) y mantener el despliegue web liviano. La persistencia completa queda como capacidad local/offline en la versión descargable.
+- **Implicación de diseño:** la capa de persistencia debe implementarse detrás de una interfaz/feature flag (por ejemplo `storage = memory | sqlite`) para que el mismo backend pueda correr en modo web sin DB y en modo descargable con SQLite local.
 
 ## 8.1. Esquema mínimo
 

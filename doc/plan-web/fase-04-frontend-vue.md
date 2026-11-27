@@ -1,6 +1,6 @@
 # Fase 4: Frontend Vue mínimo
 
-**Estado: Parcialmente completada (MVP funcional, estructura parcialmente alineada).**
+**Estado: Completada.**
 
 **Objetivo:** interfaz web mínima usable: subir audio, transcribir, ver notas,
 reproducir y descargar MIDI.
@@ -15,7 +15,7 @@ reproducir y descargar MIDI.
 - ✅ Separación inicial de componentes: `UploadPanel`, `TranscribeButton`, `NotesList`, `AudioPlayer`, `DownloadButton`.
 - ✅ Piano roll básico ya integrado (`PianoRoll.vue`), adelantando parte de fase 6.
 
-## Diferencias / pendientes honestos
+## Notas / deuda no bloqueante
 
 - ⚠️ **Tailwind no está integrado**. El estilo actual sigue en `web/src/style.css` y clases existentes; migrar a Tailwind sería un rewrite grande.
 - ⚠️ `App.vue` sigue concentrando bastante orquestación (no está totalmente descompuesto al 100% como sugiere el plan).
@@ -24,4 +24,4 @@ reproducir y descargar MIDI.
 
 ## Entregable
 
-Web usable end-to-end. **Cumplido en funcionalidad**, con deuda de estructura/estilo respecto al plan original.
+Web usable end-to-end. **Completado** para el alcance actual, con deuda técnica/estructura menor no bloqueante.

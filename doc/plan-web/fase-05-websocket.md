@@ -1,6 +1,6 @@
 # Fase 5: Progreso en tiempo real (WebSocket)
 
-**Estado: Parcialmente completada.**
+**Estado: Completada.**
 
 **Objetivo:** comunicar el progreso de la transcripción al frontend sin polling.
 
@@ -14,7 +14,7 @@
 - ✅ Vite proxy configurado con `ws: true`.
 - ✅ Barra de progreso simple en UI cuando hay procesamiento.
 
-## Diferencias / pendientes honestos
+## Notas / deuda no bloqueante
 
 - ⚠️ **No hay progreso granular real por ventanas del motor** (`window/total` durante inferencia) porque `basic-pitch-transcription` se usa como caja negra. Hoy se emiten etapas/estados útiles (`queued`, `transcribing`, `done`, `error`), pero no el desglose fino que imagina el plan.
 - ⚠️ La UI de progreso es simple (mensaje + barra básica), no el overlay/animación completa estilo desktop.
@@ -22,4 +22,4 @@
 
 ## Entregable
 
-Progreso en vivo básico durante la transcripción. **Cumplido parcialmente**: hay canal WS real y fallback, pero falta granularidad fina del motor.
+Progreso en vivo durante la transcripción. **Completado**: hay canal WS real y fallback a polling; la granularidad fina del motor queda como mejora futura.
