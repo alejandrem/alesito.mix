@@ -4,6 +4,7 @@ use axum::http::{Request, StatusCode};
 use axum::response::IntoResponse;
 use futures::StreamExt;
 use tokio::io::AsyncWriteExt;
+use tokio_util::io::ReaderStream;
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
@@ -90,14 +91,21 @@ pub async fn render_midi(
         }
     }
 
-    let wav = match tokio::fs::read(&wav_path).await {
-        Ok(wav) => wav,
+    let file = match tokio::fs::File::open(&wav_path).await {
+        Ok(file) => file,
         Err(error) => {
             let _ = tokio::fs::remove_file(&wav_path).await;
             return Err(AppError::Internal(error.to_string()));
         }
     };
-    let _ = tokio::fs::remove_file(&wav_path).await;
+    schedule_file_cleanup(wav_path.clone());
+    let body = Body::from_stream(ReaderStream::new(file));
+    Ok((StatusCode::OK, [("content-type", "audio/wav")], body))
+}
 
-    Ok((StatusCode::OK, [("content-type", "audio/wav")], wav))
+fn schedule_file_cleanup(path: std::path::PathBuf) {
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+        let _ = tokio::fs::remove_file(path).await;
+    });
 }

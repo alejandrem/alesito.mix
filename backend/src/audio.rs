@@ -69,8 +69,12 @@ pub fn render_midi_file_to_wav(
     result
 }
 
+fn fluidsynth_bin() -> String {
+    std::env::var("FLUIDSYNTH_BIN").unwrap_or_else(|_| "fluidsynth".to_string())
+}
+
 fn launch_fluidsynth(soundfont: &Path, output: &Path, midi_path: &Path) -> Result<Child, String> {
-    Command::new("fluidsynth")
+    Command::new(fluidsynth_bin())
         .args([
             "-ni",
             "-q",

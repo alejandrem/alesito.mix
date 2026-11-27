@@ -13,6 +13,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 futures = "0.3"
+tokio-util = { version = "0.7", features = ["io"] }
 # Dependencia externa: https://github.com/alejandrem/basic-pitch-rs
 # Fijar `rev` a un commit/tag estable para builds reproducibles.
 basic-pitch-transcription = { git = "https://github.com/alejandrem/basic-pitch-rs", rev = "938bce7ad06268b86d163b897908d56248ce0fe9" }

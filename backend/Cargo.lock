@@ -37,6 +37,7 @@ dependencies = [
  "serde_json",
  "symphonia",
  "tokio",
+ "tokio-util",
  "tower",
  "tower-http",
  "tracing",
