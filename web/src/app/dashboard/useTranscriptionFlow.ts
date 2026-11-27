@@ -94,14 +94,16 @@ export function useTranscriptionFlow(options: { onBeforeNewFile: () => void }) {
       return
     }
 
-    const extension = file.name.split('.').pop()?.toLowerCase()
+    const extension = file.name.split('.').pop()?.toLowerCase() ?? ''
     if (extension === 'mid' || extension === 'midi') {
       await handleMidiFile(file, selectionId)
       return
     }
 
-    if (extension !== 'mp3' && file.type !== 'audio/mpeg') {
-      store.errorMessage = 'Por ahora puedes cargar archivos MP3 o MIDI (.mid, .midi).'
+    const audioExtensions = new Set(['mp3', 'wav', 'flac', 'ogg', 'm4a', 'aac'])
+    const isAudio = audioExtensions.has(extension) || file.type.startsWith('audio/')
+    if (!isAudio) {
+      store.errorMessage = 'Formato no compatible. Usa audio (MP3, WAV, FLAC, OGG, M4A, AAC) o MIDI (.mid, .midi).'
       store.statusMessage = 'Formato no compatible.'
       return
     }
