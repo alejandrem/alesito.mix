@@ -8,6 +8,16 @@ const props = defineProps<{
   duration: number
   orientation?: 'vertical' | 'horizontal'
   zoom?: number
+  selectedIndex?: number | null
+}>()
+
+const emit = defineEmits<{
+  noteContextMenu: [payload: { index: number; note: PianoRollNote; clientX: number; clientY: number }]
+  notePreview: [payload: { index: number; note: PianoRollNote }]
+  noteCommit: [payload: { index: number; note: PianoRollNote }]
+  notePress: [payload: { index: number; note: PianoRollNote }]
+  noteClick: [payload: { index: number; note: PianoRollNote }]
+  backgroundPress: []
 }>()
 
 const canvas = ref<HTMLCanvasElement | null>(null)
@@ -56,7 +66,179 @@ const activePitches = computed(() => {
   return active
 })
 
+const dragState = ref<{
+  index: number
+  startClientX: number
+  startClientY: number
+  origin: PianoRollNote
+  current: PianoRollNote
+  pointerId: number
+} | null>(null)
+
+function clampPitch(pitch: number) {
+  return Math.max(21, Math.min(108, Math.round(pitch)))
+}
+
+function getCanvasPoint(clientX: number, clientY: number) {
+  const element = canvas.value
+  if (!element) return null
+  const rect = element.getBoundingClientRect()
+  const x = clientX - rect.left
+  const y = clientY - rect.top
+  if (x < 0 || y < 0 || x > rect.width || y > rect.height) return null
+  return { x, y, width: rect.width, height: rect.height }
+}
+
+function getNoteIndexAtPoint(clientX: number, clientY: number): number {
+  const point = getCanvasPoint(clientX, clientY)
+  if (!point) return -1
+  const { x, y, width, height } = point
+  const horizontal = orientation.value === 'horizontal'
+  const sps = secondsPerScreen.value
+  const start = viewStartTime.value
+
+  // iterate topmost last; notes are drawn in order, later draw over earlier
+  for (let i = props.notes.length - 1; i >= 0; i--) {
+    const note = props.notes[i]
+    if (horizontal) {
+      const pps = width / sps
+      const keyH = height / 88
+      if (note.end_time < start || note.start_time > start + sps) continue
+      const idx = note.pitch - 21
+      if (idx < 0 || idx > 87) continue
+      const gap = 1
+      const nx = (note.start_time - start) * pps
+      const nw = Math.max(2, (note.end_time - note.start_time) * pps - gap)
+      const ny = height - (idx + 1) * keyH + gap / 2
+      const nh = Math.max(2, keyH - 1 - gap)
+      if (x >= nx && x <= nx + nw && y >= ny && y <= ny + nh) return i
+    } else {
+      const whiteKeyW = effectiveKeyWidth.value
+      const pps = height / sps
+      if (note.end_time < start || note.start_time > start + sps) continue
+      const key = noteByPitch.get(note.pitch)
+      if (!key) continue
+      const gap = 1
+      const noteHeight = Math.max(2, (note.end_time - note.start_time) * pps - gap)
+      const bottom = height - (note.start_time - start) * pps
+      const top = bottom - noteHeight
+      const noteWidth = whiteKeyW * (key.isBlack ? 0.55 : 0.82) - gap
+      const centerX = key.isBlack ? key.whiteKeyIndex * whiteKeyW : (key.whiteKeyIndex + 0.5) * whiteKeyW
+      const nx = centerX - noteWidth / 2
+      const ny = Math.max(-noteHeight, top)
+      const visibleHeight = Math.min(height - ny, noteHeight)
+      if (x >= nx && x <= nx + noteWidth && y >= ny && y <= ny + visibleHeight) return i
+    }
+  }
+  return -1
+}
+
 // Controles de zoom/pan eliminados por decisión de UI.
+
+function noteAt(index: number): PianoRollNote | null {
+  return props.notes[index] ?? null
+}
+
+function onCanvasContextMenu(event: MouseEvent) {
+  event.preventDefault()
+  const index = getNoteIndexAtPoint(event.clientX, event.clientY)
+  if (index < 0) return
+  const note = noteAt(index)
+  if (!note) return
+  emit('noteContextMenu', { index, note: { ...note }, clientX: event.clientX, clientY: event.clientY })
+}
+
+function onCanvasPointerDown(event: PointerEvent) {
+  if (event.button !== 0) return
+  const index = getNoteIndexAtPoint(event.clientX, event.clientY)
+  if (index < 0) {
+    emit('backgroundPress')
+    return
+  }
+  const note = noteAt(index)
+  if (!note) return
+  dragState.value = {
+    index,
+    startClientX: event.clientX,
+    startClientY: event.clientY,
+    origin: { ...note },
+    current: { ...note },
+    pointerId: event.pointerId,
+  }
+  canvas.value?.setPointerCapture(event.pointerId)
+  emit('notePress', { index, note: { ...note } })
+  event.preventDefault()
+}
+
+function onCanvasPointerMove(event: PointerEvent) {
+  const drag = dragState.value
+  if (!drag || drag.pointerId !== event.pointerId) return
+  const point = getCanvasPoint(event.clientX, event.clientY)
+  const rect = canvas.value?.getBoundingClientRect()
+  if (!point || !rect) return
+
+  const dx = event.clientX - drag.startClientX
+  const dy = event.clientY - drag.startClientY
+  if (Math.abs(dx) < 2 && Math.abs(dy) < 2) return
+
+  const horizontal = orientation.value === 'horizontal'
+  const sps = secondsPerScreen.value
+  const duration = Math.max(0.01, drag.origin.end_time - drag.origin.start_time)
+  let nextStart = drag.origin.start_time
+  let nextPitch = drag.origin.pitch
+
+  if (horizontal) {
+    const pps = rect.width / sps
+    const keyH = rect.height / 88
+    nextStart = drag.origin.start_time + dx / pps
+    nextPitch = drag.origin.pitch - Math.round(dy / keyH)
+  } else {
+    const pps = rect.height / sps
+    const whiteKeyW = effectiveKeyWidth.value
+    nextStart = drag.origin.start_time - dy / pps
+    // estimate pitch delta from x movement by white-key steps
+    const pitchDelta = Math.round(dx / Math.max(1, whiteKeyW * 0.7))
+    nextPitch = drag.origin.pitch + pitchDelta
+  }
+
+  nextStart = Math.max(0, nextStart)
+  nextPitch = clampPitch(nextPitch)
+
+  const next: PianoRollNote = {
+    ...drag.origin,
+    start_time: nextStart,
+    end_time: nextStart + duration,
+    pitch: nextPitch,
+  }
+  dragState.value = { ...drag, current: next }
+  emit('notePreview', { index: drag.index, note: next })
+}
+
+function finishDrag(event: PointerEvent) {
+  const drag = dragState.value
+  if (!drag || drag.pointerId !== event.pointerId) return
+  canvas.value?.releasePointerCapture?.(event.pointerId)
+  const changed =
+    Math.abs(drag.current.start_time - drag.origin.start_time) > 0.0001 ||
+    drag.current.pitch !== drag.origin.pitch
+  const payload = { index: drag.index, note: { ...drag.current } }
+  dragState.value = null
+  if (changed) emit('noteCommit', payload)
+  else emit('noteClick', { index: payload.index, note: { ...payload.note } })
+}
+
+function onCanvasPointerUp(event: PointerEvent) {
+  finishDrag(event)
+}
+
+function onCanvasPointerCancel(event: PointerEvent) {
+  const drag = dragState.value
+  if (!drag || drag.pointerId !== event.pointerId) return
+  canvas.value?.releasePointerCapture?.(event.pointerId)
+  // revert preview
+  emit('notePreview', { index: drag.index, note: { ...drag.origin } })
+  dragState.value = null
+}
 
 function drawPianoRoll() {
   const element = canvas.value
@@ -108,7 +290,8 @@ function drawPianoRoll() {
       context.strokeStyle = Math.abs(time - Math.round(time)) < 0.001 ? majorGrid : grid
       context.beginPath(); context.moveTo(Math.round(x) + 0.5, 0); context.lineTo(Math.round(x) + 0.5, height); context.stroke()
     }
-    for (const note of props.notes) {
+    for (let i = 0; i < props.notes.length; i++) {
+      const note = props.notes[i]
       if (note.end_time < start || note.start_time > end) continue
       const idx = note.pitch - 21
       if (idx < 0 || idx > 87) continue
@@ -117,11 +300,22 @@ function drawPianoRoll() {
       const w = Math.max(2, (note.end_time - note.start_time) * pps - gap)
       const y = height - (idx + 1) * keyH + gap / 2
       const h = Math.max(2, keyH - 1 - gap)
+      const selected = props.selectedIndex === i
       const vel = 0.58 + (Math.max(1, note.velocity) / 127) * 0.34
-      context.fillStyle = dark ? `rgba(245,245,245,${vel})` : `rgba(17,17,17,${vel})`
+      context.fillStyle = dark ? `rgba(245,245,245,${selected ? 0.95 : vel})` : `rgba(17,17,17,${selected ? 0.95 : vel})`
       context.fillRect(x, y, w, h)
-      context.strokeStyle = dark ? '#ffffff' : '#000000'
-      context.strokeRect(x, y, w, h)
+      if (selected) {
+        context.strokeStyle = dark ? '#111111' : '#666666'
+        context.lineWidth = 3
+        context.strokeRect(x - 0.5, y - 0.5, w + 1, h + 1)
+        context.strokeStyle = '#ffffff'
+        context.lineWidth = 1.5
+        context.strokeRect(x - 0.5, y - 0.5, w + 1, h + 1)
+      } else {
+        context.strokeStyle = dark ? '#ffffff' : '#000000'
+        context.lineWidth = 1
+        context.strokeRect(x, y, w, h)
+      }
     }
     // playhead fijo a la izquierda
     context.strokeStyle = dark ? '#ffffff' : '#111111'
@@ -153,7 +347,8 @@ function drawPianoRoll() {
       context.fillText('Carga un archivo MIDI o MP3 para ver caer las notas', Math.min(width, (viewport.value?.clientWidth || width)) / 2, height / 2)
     }
 
-    for (const note of props.notes) {
+    for (let i = 0; i < props.notes.length; i++) {
+      const note = props.notes[i]
       if (note.end_time < start || note.start_time > end) continue
       const key = noteByPitch.get(note.pitch)
       if (!key) continue
@@ -168,11 +363,21 @@ function drawPianoRoll() {
       const y = Math.max(-noteHeight, top)
       const visibleHeight = Math.min(height - y, noteHeight)
       if (visibleHeight <= 0 || noteWidth <= 0) continue
-      const velocityOpacity = 0.58 + (Math.max(1, note.velocity) / 127) * 0.34
+      const selected = props.selectedIndex === i
+      const velocityOpacity = selected ? 0.95 : 0.58 + (Math.max(1, note.velocity) / 127) * 0.34
       context.fillStyle = dark ? `rgba(245,245,245,${velocityOpacity})` : `rgba(17,17,17,${velocityOpacity})`
       const cornerRadius = Math.max(0, Math.min(4, noteWidth / 2, visibleHeight / 2))
       context.beginPath(); context.roundRect(x, y, noteWidth, visibleHeight, cornerRadius); context.fill()
-      context.strokeStyle = dark ? '#ffffff' : '#000000'; context.lineWidth = 1; context.stroke()
+      if (selected) {
+        context.strokeStyle = dark ? '#111111' : '#666666'
+        context.lineWidth = 3
+        context.stroke()
+        context.strokeStyle = '#ffffff'
+        context.lineWidth = 1.5
+        context.stroke()
+      } else {
+        context.strokeStyle = dark ? '#ffffff' : '#000000'; context.lineWidth = 1; context.stroke()
+      }
     }
 
     // Línea de reproducción fija en la base (pegada al teclado)
@@ -224,6 +429,12 @@ onBeforeUnmount(() => {
           class="piano-roll-canvas"
           role="img"
           :aria-label="`Piano roll con ${notes.length} notas; reproducción en ${currentTime.toFixed(1)} de ${duration.toFixed(1)} segundos`"
+          style="touch-action: none; cursor: grab;"
+          @contextmenu="onCanvasContextMenu"
+          @pointerdown="onCanvasPointerDown"
+          @pointermove="onCanvasPointerMove"
+          @pointerup="onCanvasPointerUp"
+          @pointercancel="onCanvasPointerCancel"
         ></canvas>
 
         <section v-if="orientation === 'vertical'" class="piano-panel" aria-label="Teclado de piano; graves a la izquierda y agudas a la derecha">

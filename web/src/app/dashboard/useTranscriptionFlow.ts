@@ -7,10 +7,12 @@ import {
   renderMidi,
   retranscribeJob,
   submitAudio,
+  updateNotes,
   type TranscribeOptions,
 } from '../../api/client'
 import { useJobProgress } from '../../composables/useJobProgress'
 import { parseMidi } from '../../midi.js'
+import type { PianoRollNote } from '../../midi.js'
 import { useTranscriptionStore } from '../../stores/transcription'
 
 const MAX_FILE_SIZE = 100 * 1024 * 1024
@@ -278,6 +280,39 @@ export function useTranscriptionFlow(options: { onBeforeNewFile: () => void }) {
     }
   }
 
+  async function persistNotes(nextNotes: PianoRollNote[], opts?: { preserveTime?: number }) {
+    store.notes = nextNotes
+    store.durationSeconds = Math.max(store.durationSeconds, ...nextNotes.map((n) => n.end_time), 0)
+
+    if (!store.jobId) return
+
+    const controller = new AbortController()
+    clearActiveRequest()
+    activeRequest = controller
+    store.processing = true
+    store.errorMessage = ''
+    try {
+      const saved = await updateNotes(store.jobId, nextNotes, controller.signal)
+      if (controller.signal.aborted) return
+      store.notes = saved
+      store.durationSeconds = Math.max(store.durationSeconds, ...saved.map((n) => n.end_time), 0)
+      const rendered = await getJobAudio(store.jobId, controller.signal)
+      if (controller.signal.aborted) return
+      store.revokeAudioSource()
+      store.audioSource = URL.createObjectURL(rendered)
+      if (opts?.preserveTime != null) {
+        store.currentTime = opts.preserveTime
+      }
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        store.errorMessage = error instanceof Error ? error.message : 'No se pudieron guardar las notas.'
+      }
+    } finally {
+      if (activeRequest === controller) activeRequest = null
+      if (!controller.signal.aborted) store.processing = false
+    }
+  }
+
   async function downloadMidi() {
     if (!store.selectedFile) return
     try {
@@ -309,6 +344,7 @@ export function useTranscriptionFlow(options: { onBeforeNewFile: () => void }) {
     handleFileSelection,
     applySettings,
     downloadMidi,
+    persistNotes,
     cancelActiveRequest: clearActiveRequest,
   }
 }

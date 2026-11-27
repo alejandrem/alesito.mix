@@ -66,6 +66,11 @@ export async function getNotes(jobId: string, signal?: AbortSignal): Promise<Pia
   return data
 }
 
+export async function updateNotes(jobId: string, notes: PianoRollNote[], signal?: AbortSignal): Promise<PianoRollNote[]> {
+  const { data } = await http.put<PianoRollNote[]>(`/jobs/${encodeURIComponent(jobId)}/notes`, notes, { signal })
+  return data
+}
+
 export async function getMidiFile(jobId: string): Promise<Blob> {
   const { data } = await http.get(`/jobs/${encodeURIComponent(jobId)}/midi`, { responseType: 'blob' })
   return data as Blob

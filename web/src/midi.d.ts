@@ -3,6 +3,8 @@ export interface PianoRollNote {
   end_time: number
   pitch: number
   velocity: number
+  amplitude?: number
+  pitch_bend?: number[] | null
 }
 
 export interface MidiParseResult {
