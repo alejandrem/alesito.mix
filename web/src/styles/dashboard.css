@@ -55,11 +55,48 @@
   flex-direction: column;
   justify-content: flex-end;
   overflow: hidden;
-  background-color: var(--color-workspace-bg);
-  background-image:
-    linear-gradient(to right, transparent 63px, var(--color-workspace-grid-a) 64px),
-    repeating-linear-gradient(to bottom, transparent 0, transparent 47px, var(--color-workspace-grid-b) 48px);
-  background-size: 64px 100%, 100% 48px;
+  background: var(--color-workspace-bg);
+}
+
+.dashboard-workspace::before,
+.dashboard-workspace::after {
+  content: '';
+  position: absolute;
+  inset: -20%;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.dashboard-workspace::before {
+  background:
+    radial-gradient(ellipse 55% 45% at 20% 30%, color-mix(in srgb, var(--color-text) 7%, transparent), transparent 70%),
+    radial-gradient(ellipse 45% 55% at 75% 65%, color-mix(in srgb, var(--color-text) 5%, transparent), transparent 72%),
+    radial-gradient(ellipse 35% 35% at 50% 50%, color-mix(in srgb, var(--color-text) 4%, transparent), transparent 70%);
+  filter: blur(40px);
+  animation: workspace-drift 18s ease-in-out infinite alternate;
+}
+
+.dashboard-workspace::after {
+  background:
+    radial-gradient(ellipse 40% 35% at 70% 25%, color-mix(in srgb, var(--color-text) 4%, transparent), transparent 68%),
+    radial-gradient(ellipse 50% 40% at 30% 75%, color-mix(in srgb, var(--color-text) 3%, transparent), transparent 70%);
+  filter: blur(55px);
+  animation: workspace-drift-alt 24s ease-in-out infinite alternate;
+}
+
+.dashboard-workspace > * {
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes workspace-drift {
+  0% { transform: translate3d(-2%, -1%, 0) scale(1); }
+  100% { transform: translate3d(2%, 2%, 0) scale(1.05); }
+}
+
+@keyframes workspace-drift-alt {
+  0% { transform: translate3d(2%, 1%, 0) scale(1.02); }
+  100% { transform: translate3d(-2%, -2%, 0) scale(1); }
 }
 
 .file-status, .file-error, .file-warning { margin: 0; overflow-wrap: anywhere; font-size: 12px; line-height: 1.5; }

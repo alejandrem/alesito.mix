@@ -3,6 +3,8 @@ import { onBeforeUnmount, onMounted, ref } from 'vue'
 import PianoRoll from '../PianoRoll.vue'
 import DashboardSidebar from './dashboard/DashboardSidebar.vue'
 import NoteEditModal from './dashboard/NoteEditModal.vue'
+import PlaybackTopBar from './dashboard/PlaybackTopBar.vue'
+import ProcessingStatus from './dashboard/ProcessingStatus.vue'
 import { useAudioPlayback } from './dashboard/useAudioPlayback'
 import { useTranscriptionFlow } from './dashboard/useTranscriptionFlow'
 import { useTranscriptionStore } from '../stores/transcription'
@@ -56,13 +58,34 @@ async function undoLastEdit() {
   await restoreTimeAfterPersist(preserveTime)
 }
 
+async function deleteSelectedNote() {
+  if (store.processing || editOpen.value) return
+  const idx = selectedIndex.value
+  if (idx == null || idx < 0 || idx >= store.notes.length) return
+  pushUndoSnapshot(cloneNotes(store.notes))
+  const next = store.notes.filter((_, i) => i !== idx)
+  selectedIndex.value = null
+  const preserveTime = audioPlayer.value?.currentTime ?? store.currentTime
+  await persistNotes(next, { preserveTime })
+  await restoreTimeAfterPersist(preserveTime)
+}
+
 function onKeyDown(e: KeyboardEvent) {
   const key = e.key.toLowerCase()
+  const target = e.target as HTMLElement | null
+  if (target?.closest('input, textarea, select, [contenteditable="true"]')) return
+
   if ((e.ctrlKey || e.metaKey) && key === 'z') {
-    const target = e.target as HTMLElement | null
-    if (target?.closest('input, textarea, select, [contenteditable="true"]')) return
     e.preventDefault()
     void undoLastEdit()
+    return
+  }
+
+  if (e.key === 'Delete' || e.key === 'Backspace') {
+    if (selectedIndex.value != null) {
+      e.preventDefault()
+      void deleteSelectedNote()
+    }
   }
 }
 
@@ -71,6 +94,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown))
 
 function pausePlayback() {
   audioPlayer.value?.pause()
+}
+
+function onSeek(time: number) {
+  const t = Math.max(0, Math.min(time, store.durationSeconds || time))
+  if (audioPlayer.value) audioPlayer.value.currentTime = t
+  store.currentTime = t
 }
 
 function onNoteContextMenu(payload: { index: number; note: PianoRollNote; clientX: number; clientY: number }) {
@@ -154,7 +183,6 @@ async function onNoteSave(payload: { index: number; note: PianoRollNote; applyTo
   <main class="dashboard">
     <DashboardSidebar
       :playback-active="playbackActive"
-      :job-progress="jobProgress"
       @select="handleFileSelection"
       @download="downloadMidi"
       @toggle-playback="togglePlayback"
@@ -178,6 +206,18 @@ async function onNoteSave(payload: { index: number; note: PianoRollNote; applyTo
     </DashboardSidebar>
 
     <section class="dashboard-workspace" aria-label="Área de trabajo para el piano roll">
+      <PlaybackTopBar
+        v-if="store.notes.length > 0 || store.durationSeconds > 0"
+        :notes="store.notes"
+        :current-time="store.currentTime"
+        :duration="store.durationSeconds"
+        @seek="onSeek"
+      />
+      <ProcessingStatus
+        :processing="store.processing"
+        :status-message="store.statusMessage"
+        :progress="jobProgress"
+      />
       <PianoRoll
         :notes="store.notes"
         :current-time="store.currentTime"

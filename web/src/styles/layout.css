@@ -95,6 +95,14 @@
 }
 .footer-separator { padding: 0 5px; color: var(--color-text-disabled); }
 
+.page-shell.landing-shell {
+  min-height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .page-shell.dashboard-shell {
   width: 100%;
   min-height: 100vh;

@@ -14,7 +14,7 @@ function selectTheme(dark: boolean) {
 </script>
 
 <template>
-  <div class="page-shell" :class="{ 'dashboard-shell': showDashboard }">
+  <div class="page-shell" :class="showDashboard ? 'dashboard-shell' : 'landing-shell'">
     <LandingPage
       v-if="!showDashboard"
       :is-dark="isDark"

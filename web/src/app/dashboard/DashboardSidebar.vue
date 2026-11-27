@@ -2,13 +2,10 @@
 import UploadPanel from '../../components/UploadPanel.vue'
 import DownloadButton from '../../components/DownloadButton.vue'
 import { useTranscriptionStore } from '../../stores/transcription'
-import type { ProgressMessage } from '../../composables/useJobProgress'
-
 const store = useTranscriptionStore()
 
 defineProps<{
   playbackActive: boolean
-  jobProgress: ProgressMessage | null
 }>()
 
 const emit = defineEmits<{
@@ -49,10 +46,6 @@ const emit = defineEmits<{
       </div>
     </div>
 
-    <p class="file-status" role="status" aria-live="polite">{{ store.statusMessage }}</p>
-    <div v-if="store.processing" class="progress-bar" aria-label="Progreso de transcripción">
-      <div class="progress-bar-fill" :style="{ width: `${jobProgress?.percent ?? (jobProgress?.stage === 'transcribing' ? 45 : 10)}%` }"></div>
-    </div>
     <p v-if="store.errorMessage" class="file-error" role="alert">{{ store.errorMessage }}</p>
     <p v-if="store.warningMessage" class="file-warning" role="status">{{ store.warningMessage }}</p>
 

@@ -272,6 +272,66 @@ function drawPianoRoll() {
   const start = viewStartTime.value
   const end = start + sps
 
+  function drawImpact(ctx: CanvasRenderingContext2D, cx: number, cy: number, elapsed: number, strength: number, vertical: boolean) {
+    const attack = Math.max(0, 1 - elapsed / 0.16)
+    const pulse = 0.75 + 0.25 * Math.sin(props.currentTime * 14 + cx * 0.08)
+    const intensity = Math.min(1, (0.72 + attack * 0.55) * pulse) * strength
+    const seedBase = Math.floor(cx * 10 + cy * 13)
+
+    const rand = (i: number) => {
+      const s = Math.sin(seedBase * 999 + i * 127.1 + Math.floor(props.currentTime * 18) * 0.7) * 43758.5453
+      return s - Math.floor(s)
+    }
+
+    ctx.save()
+    ctx.globalCompositeOperation = 'screen'
+
+    // Núcleo brillante
+    const coreR = 8 + attack * 18 + intensity * 8
+    const core = ctx.createRadialGradient(cx, cy, 0, cx, cy, coreR)
+    core.addColorStop(0, `rgba(255,255,255,${Math.min(1, 0.95 * intensity)})`)
+    core.addColorStop(0.4, `rgba(255,255,255,${0.45 * intensity})`)
+    core.addColorStop(1, 'rgba(255,255,255,0)')
+    ctx.fillStyle = core
+    ctx.beginPath()
+    ctx.arc(cx, cy, coreR, 0, Math.PI * 2)
+    ctx.fill()
+
+    // Destello irregular / rayos aleatorios
+    const spikes = 10
+    for (let i = 0; i < spikes; i++) {
+      const a = (i / spikes) * Math.PI * 2 + rand(i) * 0.8
+      const len = (10 + rand(i + 30) * 28) * (0.7 + intensity * 0.8)
+      const w = 1.5 + rand(i + 60) * 3.5
+      const x2 = cx + Math.cos(a) * len
+      const y2 = cy + Math.sin(a) * len * (vertical ? 0.55 : 1)
+      const x3 = cx + Math.cos(a + 0.35) * (len * 0.35)
+      const y3 = cy + Math.sin(a + 0.35) * (len * 0.35) * (vertical ? 0.55 : 1)
+      ctx.fillStyle = `rgba(255,255,255,${(0.25 + rand(i + 90) * 0.55) * intensity})`
+      ctx.beginPath()
+      ctx.moveTo(cx + Math.cos(a - 0.2) * w, cy + Math.sin(a - 0.2) * w)
+      ctx.lineTo(x2, y2)
+      ctx.lineTo(x3, y3)
+      ctx.closePath()
+      ctx.fill()
+    }
+
+    // Chispas
+    for (let i = 0; i < 6; i++) {
+      const a = rand(i + 200) * Math.PI * 2
+      const dist = 8 + rand(i + 230) * 24 * intensity
+      const sx = cx + Math.cos(a) * dist
+      const sy = cy + Math.sin(a) * dist * (vertical ? 0.6 : 1)
+      const sr = 1 + rand(i + 260) * 2.5
+      ctx.fillStyle = `rgba(255,255,255,${(0.35 + rand(i + 290) * 0.65) * intensity})`
+      ctx.beginPath()
+      ctx.arc(sx, sy, sr, 0, Math.PI * 2)
+      ctx.fill()
+    }
+
+    ctx.restore()
+  }
+
   if (horizontal) {
     // Tiempo en X, pitch en Y (graves abajo), piano a la izquierda (visual fuera del canvas)
     const pps = width / sps
@@ -317,6 +377,19 @@ function drawPianoRoll() {
         context.strokeRect(x, y, w, h)
       }
     }
+    // Impactos al tocar el playhead
+    for (const note of props.notes) {
+      if (!(note.start_time <= props.currentTime && note.end_time > props.currentTime)) continue
+      const idx = note.pitch - 21
+      if (idx < 0 || idx > 87) continue
+      const gap = 1
+      const y = height - (idx + 1) * keyH + gap / 2
+      const h = Math.max(2, keyH - 1 - gap)
+      const elapsed = Math.max(0, props.currentTime - note.start_time)
+      const strength = 0.5 + (Math.max(1, note.velocity) / 127) * 0.5
+      drawImpact(context, 1, y + h / 2, elapsed, strength, false)
+    }
+
     // playhead fijo a la izquierda
     context.strokeStyle = dark ? '#ffffff' : '#111111'
     context.lineWidth = 2
@@ -380,8 +453,20 @@ function drawPianoRoll() {
       }
     }
 
-    // Línea de reproducción fija en la base (pegada al teclado)
+    // Impactos al tocar el playhead
     const playheadY = height - 1
+    for (const note of props.notes) {
+      if (!(note.start_time <= props.currentTime && note.end_time > props.currentTime)) continue
+      if (note.end_time < start || note.start_time > end) continue
+      const key = noteByPitch.get(note.pitch)
+      if (!key) continue
+      const centerX = key.isBlack ? key.whiteKeyIndex * whiteKeyW : (key.whiteKeyIndex + 0.5) * whiteKeyW
+      const elapsed = Math.max(0, props.currentTime - note.start_time)
+      const strength = 0.5 + (Math.max(1, note.velocity) / 127) * 0.5
+      drawImpact(context, centerX, playheadY, elapsed, strength, true)
+    }
+
+    // Línea de reproducción fija en la base (pegada al teclado)
     context.strokeStyle = dark ? '#ffffff' : '#111111'; context.lineWidth = 2
     context.beginPath(); context.moveTo(0, playheadY - 0.5); context.lineTo(width, playheadY - 0.5); context.stroke()
   }
