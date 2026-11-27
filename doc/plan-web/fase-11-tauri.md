@@ -1,25 +1,32 @@
 # Fase 11: Versión de escritorio (Tauri)
 
+**Estado: En progreso (esqueleto inicial creado).**
+
 **Objetivo:** reutilizar el frontend Vue en una app de escritorio con Tauri,
-usando FluidSynth nativo.
+aprovechando el backend Rust existente.
 
-## 11.1. Estrategia
+## 11.1. Estrategia aplicada
 
-- Mismo frontend (`frontend/`).
-- Backend Rust embebido en Tauri (comandos en lugar de HTTP).
-- FluidSynth nativo (binding o proceso) para audio fiel.
-- SQLite local.
+- Frontend reutilizado desde `web/` (build en `web/dist`).
+- Backend Rust convertido a librería (`backend/src/lib.rs`) y reutilizado por `src-tauri`.
+- La app Tauri inicia el backend Axum en `127.0.0.1:3000` y navega el webview a esa URL.
+- SoundFont bundlada como recurso; modelo y FluidSynth con estrategia de resolución por entorno.
 
-## 11.2. Ventajas
+## 11.2. Lo que ya existe
 
-- Reutiliza el 90 % del frontend.
-- Audio nativo sin streaming.
-- Offline.
+- ✅ `src-tauri/` (Tauri v2) con config, build, capabilities y bootstrap Rust.
+- ✅ CI matrix Linux/Windows (`.github/workflows/ci.yml`).
+- ✅ Workflow de release desktop Linux/Windows (`.github/workflows/release.yml`).
+- ✅ Documentación inicial: `doc/desktop-build.md`.
 
-## 11.3. Cuándo hacerlo
+## 11.3. Pendientes
 
-Solo después de que la web tenga paridad mínima (Fases 1-4). No antes.
+- ⚠️ Bundlear FluidSynth por plataforma (`resources/bin/`).
+- ⚠️ Descarga automática de modelo en primer arranque.
+- ⚠️ Íconos reales de app (los actuales son placeholders).
+- ⚠️ Smoke tests reales en Windows/Linux limpio.
+- ⚠️ Firmado/notarización de instaladores.
 
 ## Entregable
 
-App de escritorio con la misma UI que la web.
+App de escritorio con la misma UI que la web, empaquetada por plataforma.

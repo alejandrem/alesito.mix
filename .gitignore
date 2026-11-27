@@ -21,3 +21,7 @@ backend/tmp/
 
 # Modelo descargado desde releases de basic-pitch-rs
 backend/models/
+
+# Tauri generated/build artifacts
+src-tauri/gen/
+src-tauri/tmp/
