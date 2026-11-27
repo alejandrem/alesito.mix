@@ -4,7 +4,7 @@ use axum::extract::{Multipart, Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::Json;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use uuid::Uuid;
 
@@ -150,13 +150,15 @@ pub struct JobResponse {
     pub error: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct NoteDto {
     pub start_time: f64,
     pub end_time: f64,
     pub pitch: u8,
     pub velocity: u8,
+    #[serde(default)]
     pub amplitude: f32,
+    #[serde(default)]
     pub pitch_bend: Option<Vec<i16>>,
 }
 
@@ -382,6 +384,9 @@ async fn start_transcription(
                 status: JobStatus::Queued,
                 audio_path: Some(audio_path.clone()),
                 result: None,
+                edited_notes: None,
+                edited_midi: None,
+                midi_tempo: options.midi_tempo,
                 error: None,
                 rendered_audio: None,
                 created_at: std::time::Instant::now(),
@@ -505,6 +510,8 @@ pub async fn retranscribe_job(
     };
     if let Some(p) = prev_rendered { let _ = tokio::fs::remove_file(p).await; }
 
+    let options = query.apply(TranscriptionOptions::default());
+
     // Reset job state and re-run with new options
     let (progress_tx, _) = tokio::sync::broadcast::channel(16);
     let _ = progress_tx.send(ProgressEvent::stage("queued", 0));
@@ -513,12 +520,14 @@ pub async fn retranscribe_job(
         if let Some(job) = jobs.get_mut(&id) {
             job.status = JobStatus::Queued;
             job.result = None;
+            job.edited_notes = None;
+            job.edited_midi = None;
+            job.midi_tempo = options.midi_tempo;
             job.error = None;
             job.rendered_audio = None;
             job.progress_tx = progress_tx.clone();
         }
     }
-    let options = query.apply(TranscriptionOptions::default());
     // Reuse start_transcription logic by spawning directly; easier to call a helper.
     // We'll inline: create a new job id? No, keep same id for simplicity.
     start_transcription_existing(state, id, audio_path, options, progress_tx).await
@@ -588,9 +597,20 @@ pub async fn get_job(
         .get(&id)
         .ok_or_else(|| AppError::NotFound("job no encontrado".into()))?;
 
-    let (count, dur) = match &job.result {
-        Some(r) => (Some(r.notes.len()), Some(r.duration_seconds)),
-        None => (None, None),
+    let (count, dur) = if let Some(edited) = &job.edited_notes {
+        let duration = edited
+            .iter()
+            .map(|n| n.end_time)
+            .fold(
+                job.result.as_ref().map(|r| r.duration_seconds).unwrap_or(0.0),
+                f64::max,
+            );
+        (Some(edited.len()), Some(duration))
+    } else {
+        match &job.result {
+            Some(r) => (Some(r.notes.len()), Some(r.duration_seconds)),
+            None => (None, None),
+        }
     };
 
     Ok(Json(JobResponse {
@@ -602,6 +622,17 @@ pub async fn get_job(
     }))
 }
 
+fn note_to_dto(n: &basic_pitch_midi_io::NoteEvent) -> NoteDto {
+    NoteDto {
+        start_time: n.start_time,
+        end_time: n.end_time,
+        pitch: n.pitch,
+        velocity: n.velocity,
+        amplitude: n.amplitude,
+        pitch_bend: n.pitch_bend.clone(),
+    }
+}
+
 pub async fn get_notes(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
@@ -610,25 +641,17 @@ pub async fn get_notes(
     let job = jobs
         .get(&id)
         .ok_or_else(|| AppError::NotFound("job no encontrado".into()))?;
+
+    if let Some(edited) = &job.edited_notes {
+        return Ok(Json(edited.iter().map(note_to_dto).collect()));
+    }
+
     let result = job
         .result
         .as_ref()
         .ok_or_else(|| AppError::BadRequest("transcripcion no lista".into()))?;
 
-    let notes = result
-        .notes
-        .iter()
-        .map(|n| NoteDto {
-            start_time: n.start_time,
-            end_time: n.end_time,
-            pitch: n.pitch,
-            velocity: n.velocity,
-            amplitude: n.amplitude,
-            pitch_bend: n.pitch_bend.clone(),
-        })
-        .collect();
-
-    Ok(Json(notes))
+    Ok(Json(result.notes.iter().map(note_to_dto).collect()))
 }
 
 pub async fn get_midi(
@@ -639,16 +662,127 @@ pub async fn get_midi(
     let job = jobs
         .get(&id)
         .ok_or_else(|| AppError::NotFound("job no encontrado".into()))?;
-    let result = job
-        .result
-        .as_ref()
-        .ok_or_else(|| AppError::BadRequest("transcripcion no lista".into()))?;
+
+    let midi = if let Some(edited) = &job.edited_midi {
+        edited.clone()
+    } else {
+        let result = job
+            .result
+            .as_ref()
+            .ok_or_else(|| AppError::BadRequest("transcripcion no lista".into()))?;
+        result.midi_data.clone()
+    };
 
     Ok((
         StatusCode::OK,
         [("content-type", "audio/midi")],
-        result.midi_data.clone(),
+        midi,
     ))
+}
+
+pub async fn update_notes(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(notes): Json<Vec<NoteDto>>,
+) -> AppResult<Json<Vec<NoteDto>>> {
+    let (midi_tempo, soundfont, timeout_secs, temp_dir) = {
+        let jobs = state.jobs.read().await;
+        let job = jobs
+            .get(&id)
+            .ok_or_else(|| AppError::NotFound("job no encontrado".into()))?;
+        if job.result.is_none() {
+            return Err(AppError::BadRequest("transcripcion no lista".into()));
+        }
+        if matches!(job.status, JobStatus::Queued | JobStatus::Running) {
+            return Err(AppError::BadRequest("el job está en ejecución".into()));
+        }
+        (
+            job.midi_tempo,
+            state.soundfont.clone(),
+            state.config.fluidsynth_timeout_secs,
+            state.temp_dir.clone(),
+        )
+    };
+
+    let mut cleaned: Vec<basic_pitch_midi_io::NoteEvent> = Vec::with_capacity(notes.len());
+    for n in &notes {
+        if !(21..=108).contains(&n.pitch) {
+            return Err(AppError::BadRequest(format!("pitch fuera de rango: {}", n.pitch)));
+        }
+        if n.velocity > 127 {
+            return Err(AppError::BadRequest("velocity fuera de rango".into()));
+        }
+        if !n.start_time.is_finite() || !n.end_time.is_finite() || n.start_time < 0.0 {
+            return Err(AppError::BadRequest("tiempos de nota inválidos".into()));
+        }
+        if n.end_time <= n.start_time {
+            return Err(AppError::BadRequest("end_time debe ser mayor que start_time".into()));
+        }
+        let amplitude = if n.amplitude.is_finite() && n.amplitude > 0.0 {
+            n.amplitude.clamp(0.0, 1.0)
+        } else {
+            (n.velocity as f32 / 127.0).clamp(0.0, 1.0)
+        };
+        cleaned.push(basic_pitch_midi_io::NoteEvent {
+            start_time: n.start_time,
+            end_time: n.end_time,
+            pitch: n.pitch,
+            velocity: n.velocity,
+            amplitude,
+            pitch_bend: n.pitch_bend.clone(),
+        });
+    }
+
+    cleaned.sort_by(|a, b| {
+        a.start_time
+            .partial_cmp(&b.start_time)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then(a.pitch.cmp(&b.pitch))
+    });
+
+    let mut writer = basic_pitch_midi_io::MidiWriter::new();
+    writer.tempo = if midi_tempo.is_finite() && midi_tempo > 0.0 { midi_tempo } else { 120.0 };
+    let midi_data = writer
+        .to_bytes(&cleaned)
+        .map_err(|e| AppError::Internal(format!("no se pudo generar MIDI: {e}")))?;
+
+    let wav_path = temp_dir.join(format!("{}.wav", id));
+    let midi_for_render = midi_data.clone();
+    let soundfont_for_render = soundfont.clone();
+    let wav_for_render = wav_path.clone();
+    let render_result = tokio::task::spawn_blocking(move || {
+        crate::audio::render_midi_to_wav(&midi_for_render, &soundfont_for_render, &wav_for_render, timeout_secs)
+    })
+    .await
+    .map_err(|e| AppError::Internal(e.to_string()))?;
+
+    let mut jobs = state.jobs.write().await;
+    let job = jobs
+        .get_mut(&id)
+        .ok_or_else(|| AppError::NotFound("job no encontrado".into()))?;
+
+    if let Some(old) = job.rendered_audio.take() {
+        if old != wav_path {
+            let _ = std::fs::remove_file(old);
+        }
+    }
+
+    match render_result {
+        Ok(()) => {
+            job.rendered_audio = Some(wav_path);
+            job.error = None;
+        }
+        Err(err) => {
+            let _ = std::fs::remove_file(&wav_path);
+            job.rendered_audio = None;
+            job.error = Some(format!("notas guardadas; audio no disponible: {err}"));
+        }
+    }
+
+    job.edited_midi = Some(midi_data);
+    job.edited_notes = Some(cleaned.clone());
+
+    Ok(Json(cleaned.iter().map(note_to_dto).collect()))
 }
 
 pub async fn get_audio(

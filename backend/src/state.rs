@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use basic_pitch_midi_io::NoteEvent;
 use basic_pitch_transcription::{Transcriber, TranscriptionResult};
 use serde::Serialize;
 use tokio::sync::{broadcast, RwLock, Semaphore};
@@ -101,6 +102,9 @@ pub struct Job {
     #[allow(dead_code)]
     pub audio_path: Option<PathBuf>,
     pub result: Option<TranscriptionResult>,
+    pub edited_notes: Option<Vec<NoteEvent>>,
+    pub edited_midi: Option<Vec<u8>>,
+    pub midi_tempo: f64,
     pub error: Option<String>,
     pub rendered_audio: Option<PathBuf>,
     pub created_at: std::time::Instant,
